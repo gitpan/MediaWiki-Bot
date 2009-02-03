@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                MediaWiki-Bot
-version:             2.0.1
+version:             2.1.0
 abstract:            a Wikipedia bot framework written in Perl
 license:             gpl
 author:              
