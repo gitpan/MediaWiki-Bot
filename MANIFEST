@@ -1,8 +1,10 @@
 Changes
+Debian_CPANTS.txt
 INSTALL
 LICENSE
 Makefile.PL
 MANIFEST
+META.yml
 README
 lib/MediaWiki/Bot.pm
 lib/PWP.pm
@@ -33,4 +35,3 @@ t/21_unicode.t
 t/97_pod.t
 t/98_pod_coverage.t
 t/99_pod_kwalitee.t
-META.yml                                 Module meta-data (added by MakeMaker)
