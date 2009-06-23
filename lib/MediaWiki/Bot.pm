@@ -20,7 +20,7 @@ foreach my $plugin (__PACKAGE__->plugins) {
 }
 
 
-our $VERSION = '2.2.4';
+our $VERSION = '2.3.0';
 
 =head1 NAME
 
@@ -43,6 +43,23 @@ Many of the methods use the MediaWiki API (L<http://en.wikipedia.org/w/api.php>)
 =head1 AUTHOR
 
 The MediaWiki::Bot team (Alex Rowe, Jmax, Oleg Alexandrov, Dan Collins) and others.
+
+=head1 COPYING
+
+Copyright (C) 2006, 2007 by the MediaWiki::Bot team
+
+This library is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or
+(at your option) any later version.
+
+This library is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 =head1 METHODS
 
@@ -225,8 +242,6 @@ sub login {
 		$self->{error}=$self->{api}->{error};
 		return $self->{error}->{code};
 	}
-#	use Data::Dumper; print Dumper($res);
-#    unless (ref($res) eq 'HTTP::Response' && $res->is_success) { return; }
     $self->{mech}->{cookie_jar}->extract_cookies($self->{api}->{response});
     my $result = $res->{login}->{result};
     if ($result eq "Success") {
@@ -252,15 +267,12 @@ sub edit {
     my $res;
 
     $assert=~s/\&?assert=// if $assert;
-#    $text = encode( 'utf8', $text ) if $text;
-#    $summary = encode( 'utf8', $summary ) if $summary;
 
 	$res = $self->{api}->api( {
 		action=>'query',
 		titles=>$page,
 		prop=>'info|revisions',
 		intoken=>'edit' } );
-#	use Data::Dumper; print Dumper($res);
 	my ($id, $data)=%{$res->{query}->{pages}};
 	my $edittoken=$data->{edittoken};
 	my $lastedit=$data->{revisions}[0]->{timestamp};
@@ -276,10 +288,8 @@ sub edit {
 
 	$savehash->{assert}=$assert if ($assert);
 	$savehash->{minor}=$is_minor if ($is_minor);
-#	use Data::Dumper; print Dumper($savehash);
 
 	$res = $self->{api}->api( $savehash );
-#	use Data::Dumper; print Dumper($res);
 	if (!$res) {
 		carp "Error code: " . $self->{api}->{error}->{code};
 		carp $self->{api}->{error}->{details};
@@ -299,7 +309,7 @@ sub edit {
 		}
 		return 2;
 		} else {
-		carp "Assertion failed";
+			carp "Assertion failed";
 		}
         }
     return $res;
@@ -395,61 +405,117 @@ sub get_text {
 		carp $self->{api}->{error}->{details};
 		$self->{error}=$self->{api}->{error};
 		return $self->{error}->{code};
-#use Data::Dumper; print Dumper($hash);
 	}
-#	use Data::Dumper; print Dumper($res);
 	my ($id, $data)=%{$res->{query}->{pages}};
 
 	if ($id==-1) {return 2}
 
 	my $wikitext=$data->{revisions}[0]->{'*'};
-#	use Data::Dumper;print Dumper($data);
 	return $wikitext;
 }
 
 =item get_pages(@pages)
 
 Returns the text of the specified pages in a hashref. Content of '2' means page does not exist.
+Also handles redirects or article names that use namespace aliases
 
 =cut
+
+sub _get_one_page {
+    my ($self,$title) = @_;
+    my $hash = {
+	action=>'query',
+	prop=>'revisions',
+	rvprop=>'content',
+    };
+
+    my $mw_temp = MediaWiki::API->new();
+    $mw_temp->{config}->{api_url} = $self->{api}->{config}->{api_url};
+    $hash->{titles} = $title;
+    my $res_temp = $mw_temp->api($hash);
+    my ($k,$v) = each %{ $res_temp->{query}->{pages} };
+    return $v;
+}
 
 sub get_pages {
     my $self     = shift;
     my @pages    = @_;
     my %return;
 
-	my $hash = {
-		action=>'query',
-		titles=>join('|', @pages),
-		prop=>'revisions',
-		rvprop=>'content',
-	};
+    my $hash = {
+	action=>'query',
+	titles=>join('|', @pages),
+	prop=>'revisions',
+	rvprop=>'content',
+    };
 
-#	use Data::Dumper; print Dumper($hash);
-	my $res = $self->{api}->api( $hash );
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
-#	use Data::Dumper; print Dumper($res);
-	foreach my $id (keys %{$res->{query}->{pages}}) {
-		if (defined($res->{query}->{pages}->{$id}->{missing})) {
-			$return{$res->{query}->{pages}->{$id}->{title}}=
-				2;
-			next;
-		}
-		if (defined($res->{query}->{pages}->{$id}->{revisions})) {
-			my @revisions=@{$res->{query}->{pages}->{$id}->{revisions}};
-			$return{$res->{query}->{pages}->{$id}->{title}}=
-				$revisions[0]->{'*'};
-			next;
-		}
+    my $diff;  # used to track problematic article names
+    map { $diff->{$_}=1; } @pages;
+    my $res = $self->{api}->api( $hash );
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
+    #need to add shift @pages before each next , and 
+    foreach my $id (keys %{$res->{query}->{pages}}) {
+	my $page = $res->{query}->{pages}->{$id};
+	if($diff->{ $page->{title} }){
+	    $diff->{ $page->{title} }++ ;
+	} else {
+	    next;
 	}
 
-#	use Data::Dumper;print Dumper(\%return);
-	return \%return;
+	if (defined($page->{missing})) {
+	    $return{$page->{title}}=2;
+	    next;
+	}
+	if (defined($page->{revisions})) {
+	    my $revisions = @{$page->{revisions}}[0]->{'*'};
+	    if (! defined $revisions) {
+		$return{$page->{title}} = $revisions;
+	    } elsif (
+		length($revisions)< 150 &&
+		$revisions =~ /\#REDIRECT\s\[\[([^\[\]]*)\]\]/
+	    ) {
+		my $redirect_to = $1;
+		$redirect_to=~ s/\s/_/g;
+		my $v = $self->_get_one_page($redirect_to);
+		$return{ $page->{title}}= @{ $v->{revisions} }[0]->{'*'};
+	    } else {
+		$return{$page->{title}}= $revisions;
+	    };
+	}
+    };
+
+    #based on
+    #http://en.wikipedia.org/w/api.php?action=query&meta=siteinfo&siprop=namespaces|namespacealiases
+    my $expand = {
+	WP  => 'Wikipedia',
+	WT  => 'Wikipedia talk',
+	Image	=> 'File',
+	'Image Talk' => 'File talk',
+    };
+    for my $title ( keys %$diff ) {
+	#only for those article names that remained after the first part
+	#if we're here we are dealing most likely with a WP:CSD type of article name
+	if($diff->{$title}==1) {
+	    my @pieces = split ':',$title;
+	    if(@pieces>1) {
+		$pieces[0] = $expand->{$pieces[0]};
+		my $v = $self->_get_one_page(join ':',@pieces);
+		print "Detected article name that needed expanding $title\n" if @{ $v->{revisions} }[0]->{'*'} && $self->{debug};
+
+		$return{$title} = @{ $v->{revisions} }[0]->{'*'};
+		if(@{ $v->{revisions} }[0]->{'*'} =~ /\#REDIRECT\s\[\[([^\[\]]*)\]\]/) {
+		    my $v = $self->_get_one_page($1);
+		    $return{$title} = @{ $v->{revisions} }[0]->{'*'};
+		}
+	    }
+	}
+    }
+    return \%return;
 }
 
 =item revert($pagename,$edit_summary,$old_revision_id)
@@ -465,12 +531,12 @@ sub revert {
     my $revid    = shift;
 
     return $self->_put(
-        $pagename,
-        {
-            form_name => 'editform',
-            fields    => { wpSummary => $summary, },
-        },
-        "&oldid=$revid"
+	$pagename,
+	{
+	    form_name => 'editform',
+	    fields    => { wpSummary => $summary, },
+	},
+	"&oldid=$revid"
     );
 }
 
@@ -488,12 +554,12 @@ sub undo {
     my $after    = shift || '';
 
     return $self->_put(
-        $pagename,
-        {
-            form_name => 'editform',
-            fields    => { wpSummary => $summary, },          
-        },
-        "&undo$after=$revid",
+	$pagename,
+	{
+	    form_name => 'editform',
+	    fields    => { wpSummary => $summary, },          
+	},
+	"&undo$after=$revid",
 	"undo" #For the error detection in _put.
     );
 }
@@ -510,23 +576,23 @@ sub get_last {
     my $editor   = shift;
 
     my $revertto = 0;
-	$pagename = uri_escape_utf8( $pagename );
+    $pagename = uri_escape_utf8( $pagename );
 
-	my $res = $self->{api}->api( {
-		action=>'query',
-		titles=>$pagename,
-		prop=>'revisions',
-		rvlimit=>20,
-		rvprop=>'ids|user',
-		rvexcludeuser=>$editor } );
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
-	my ($id, $data)=%{$res->{query}->{pages}};
-	return $data->{revisions}[0]->{revid};
+    my $res = $self->{api}->api( {
+	    action=>'query',
+	    titles=>$pagename,
+	    prop=>'revisions',
+	    rvlimit=>20,
+	    rvprop=>'ids|user',
+	    rvexcludeuser=>$editor } );
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
+    my ($id, $data)=%{$res->{query}->{pages}};
+    return $data->{revisions}[0]->{revid};
 }
 
 =item update_rc([$limit])
@@ -536,29 +602,29 @@ Returns an array containing the Recent Changes to the wiki Main namespace. The a
 =cut
 
 sub update_rc {
-	my $self = shift;
-	my $limit = shift || 5;
-	my @rc_table;
+    my $self = shift;
+    my $limit = shift || 5;
+    my @rc_table;
 
-	my $res = $self->{api}->list( {
-		action=>'query',
-		list=>'recentchanges',
-		rcnamespace=>0,
-		rclimit=>$limit },
-		{ max=>$limit } );
-	foreach my $hash (@{$res}) {
-	    	my ( $timestamp_date, $timestamp_time ) = split( /T/, $hash->{timestamp} );
-	    	$timestamp_time =~ s/Z$//;
-	    	push( @rc_table, {
-	    			pagename       => $hash->{title},
-	    			revid	       => $hash->{revid},
-	    			oldid	       => $hash->{old_revid},
-	    			timestamp_date => $timestamp_date,
-	    			timestamp_time => $timestamp_time,
-	    		}
-	    	);
-	}
-	return @rc_table;
+    my $res = $self->{api}->list( {
+	    action=>'query',
+	    list=>'recentchanges',
+	    rcnamespace=>0,
+	    rclimit=>$limit },
+	{ max=>$limit } );
+    foreach my $hash (@{$res}) {
+	my ( $timestamp_date, $timestamp_time ) = split( /T/, $hash->{timestamp} );
+	$timestamp_time =~ s/Z$//;
+	push( @rc_table, {
+		pagename       => $hash->{title},
+		revid	       => $hash->{revid},
+		oldid	       => $hash->{old_revid},
+		timestamp_date => $timestamp_date,
+		timestamp_time => $timestamp_time,
+	    }
+	);
+    }
+    return @rc_table;
 }
 
 =item what_links_here($pagename)
@@ -572,30 +638,30 @@ sub what_links_here {
     my $article = shift;
     my @links;
 
-	$article = uri_escape_utf8( $article );
+    $article = uri_escape_utf8( $article );
 
     my $res =
-      $self->_get( 'Special:Whatlinkshere', 'view',
-        "&target=$article&limit=5000" );
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
+    $self->_get( 'Special:Whatlinkshere', 'view',
+	"&target=$article&limit=5000" );
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
     unless (ref($res) eq 'HTTP::Response' && $res->is_success) { return 1; }
     my $content = $res->decoded_content;
     while (
-        $content =~ m{<li><a href="[^"]+" title="([^"]+)">[^<]+</a>([^<]*)}g ) {
-        my $title = $1;
-        my $type  = $2;
-        if ( $type !~ /\(redirect page\)/ && $type !~ /\(transclusion\)/ ) {
-            $type = "";
-        }
-        if ( $type =~ /\(redirect page\)/ ) { $type = "redirect"; }
-        if ( $type =~ /\(transclusion\)/ )  { $type = "transclusion"; }
+	$content =~ m{<li><a href="[^"]+" title="([^"]+)">[^<]+</a>([^<]*)}g ) {
+	my $title = $1;
+	my $type  = $2;
+	if ( $type !~ /\(redirect page\)/ && $type !~ /\(transclusion\)/ ) {
+	    $type = "";
+	}
+	if ( $type =~ /\(redirect page\)/ ) { $type = "redirect"; }
+	if ( $type =~ /\(transclusion\)/ )  { $type = "transclusion"; }
 
-        push @links, { title => $title, type => $type };
+	push @links, { title => $title, type => $type };
     }
 
     return @links;
@@ -612,23 +678,22 @@ sub get_pages_in_category {
     my $category = shift;
 
     my @return;
-	my $res = $self->{api}->list( {
-		action=>'query',
-		list=>'categorymembers',
-		cmtitle=>$category,
-		cmlimit=>500 },
-#		{ max=>100 }
-		 );
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
-	foreach (@{$res}) {
-		push @return, $_->{title};
-	}
-	return @return;
+    my $res = $self->{api}->list( {
+	    action=>'query',
+	    list=>'categorymembers',
+	    cmtitle=>$category,
+	    cmlimit=>500 },
+    );
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
+    foreach (@{$res}) {
+	push @return, $_->{title};
+    }
+    return @return;
 }
 
 =item get_all_pages_in_category($category_name)
@@ -643,13 +708,13 @@ sub get_all_pages_in_category {
     my @first         = $self->get_pages_in_category($base_category);
     my %data;
     foreach my $page (@first) {
-        $data{$page} = '';
-        if ( $page =~ /^Category:/ ) {
-            my @pages = $self->get_all_pages_in_category($page);
-            foreach (@pages) {
-                $data{$_} = '';
-            }
-        }
+	$data{$page} = '';
+	if ( $page =~ /^Category:/ ) {
+	    my @pages = $self->get_all_pages_in_category($page);
+	    foreach (@pages) {
+		$data{$_} = '';
+	    }
+	}
     }
     return keys %data;
 }
@@ -665,20 +730,20 @@ sub linksearch {
     my $link = shift;
     my @links;
     my $res =
-      $self->_get( "Special:Linksearch", "edit", "&target=$link&limit=500" );
+    $self->_get( "Special:Linksearch", "edit", "&target=$link&limit=500" );
     unless (ref($res) eq 'HTTP::Response' && $res->is_success) { return 1; }
     my $content = $res->decoded_content;
     while ( $content =~
-        m{<li><a href.+>(.+?)</a> linked from <a href.+>(.+)</a></li>}g ) {
-        push( @links, { link => $1, page => $2 } );
+	m{<li><a href.+>(.+?)</a> linked from <a href.+>(.+)</a></li>}g ) {
+	push( @links, { link => $1, page => $2 } );
     }
     while ( my $res = $self->{mech}->follow_link( text => 'next 500' ) && ref($res) eq 'HTTP::Response' && $res->is_success ) {
-        sleep 2;
-        my $content = $res->decoded_content;
-        while ( $content =~
-            m{<li><a href.+>(.+?)</a> linked from <a href=.+>(.+)</a></li>}g ) {
-            push( @links, { link => $1, page => $2 } );
-        }
+	sleep 2;
+	my $content = $res->decoded_content;
+	while ( $content =~
+	    m{<li><a href.+>(.+?)</a> linked from <a href=.+>(.+)</a></li>}g ) {
+	    push( @links, { link => $1, page => $2 } );
+	}
     }
     return @links;
 }
@@ -703,26 +768,26 @@ get_namespace_names returns a hash linking the namespace id, such as 1, to its n
 =cut
 
 sub get_namespace_names {
-	my $self = shift;
-	my %return;
-	my $res = $self->{api}->api( {
-		action=>'query',
-		meta=>'siteinfo',
-		siprop=>'namespaces'} );
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
-	foreach my $id (keys %{$res->{query}->{namespaces}}) {
-		$return{$id} = $res->{query}->{namespaces}->{$id}->{'*'};
-	}
-	if ($return{1} or $_[0]>1) {
-		return %return;
-	} else {
-		return $self->get_namespace_names($_[0]+1);
-	}
+    my $self = shift;
+    my %return;
+    my $res = $self->{api}->api( {
+	    action=>'query',
+	    meta=>'siteinfo',
+	    siprop=>'namespaces'} );
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
+    foreach my $id (keys %{$res->{query}->{namespaces}}) {
+	$return{$id} = $res->{query}->{namespaces}->{$id}->{'*'};
+    }
+    if ($return{1} or $_[0]>1) {
+	return %return;
+    } else {
+	return $self->get_namespace_names($_[0]+1);
+    }
 }
 
 =item links_to_image($page)
@@ -732,18 +797,18 @@ Gets a list of pages which include a certain image.
 =cut
 
 sub links_to_image {
-	my $self	= shift;
-	my $page	= shift;
-	my $url = "http://$self->{host}/$self->{path}/index.php?title=$page";
-	print "Retrieving $url\n" if $self->{debug};
-	my $res = $self->{mech}->get($url);
-	$res->decoded_content=~/div class=\"linkstoimage\" id=\"linkstoimage\"(.+?)\<\/ul\>/is;
-	my $list=$1;
-	my @list;
-	while ($list=~/title=\"(.+?)\"/ig) {
-		push @list, $1;
-	}
-	return @list;
+    my $self	= shift;
+    my $page	= shift;
+    my $url = "http://$self->{host}/$self->{path}/index.php?title=$page";
+    print "Retrieving $url\n" if $self->{debug};
+    my $res = $self->{mech}->get($url);
+    $res->decoded_content=~/div class=\"linkstoimage\" id=\"linkstoimage\"(.+?)\<\/ul\>/is;
+    my $list=$1;
+    my @list;
+    while ($list=~/title=\"(.+?)\"/ig) {
+	push @list, $1;
+    }
+    return @list;
 }
 
 =item test_blocked($user)
@@ -753,15 +818,15 @@ Checks if a user is currently blocked.
 =cut
 
 sub test_blocked {
-	my $self	  = shift;
-	my $user	  = shift;
+    my $self	  = shift;
+    my $user	  = shift;
 
-	my $res = $self->_get("Special%3AIpblocklist&ip=$user", "", "", 1);
-	if ($res->decoded_content=~/not blocked/i) {
-		return 0;
-	} else {
-		return 1;
-	}
+    my $res = $self->_get("Special%3AIpblocklist&ip=$user", "", "", 1);
+    if ($res->decoded_content=~/not blocked/i) {
+	return 0;
+    } else {
+	return 1;
+    }
 }
 
 =item test_image_exists($page)
@@ -771,46 +836,46 @@ Checks if an image exists at $page. 0 means no, 1 means yes, local, 2 means on c
 =cut
 
 sub test_image_exists {
-	my $self	= shift;
-	my @pages	= @_;
-	
-	my $titles=join('|', @pages);
-	my $return;
-	$titles=~s/\|{2,}/\|/g;
-	$titles=~s/\|$//;
+    my $self	= shift;
+    my @pages	= @_;
 
-	my $hash = {
-		action => 'query',
-		titles => $titles,
-		iilimit => 1,
-		prop => 'imageinfo'};
+    my $titles=join('|', @pages);
+    my $return;
+    $titles=~s/\|{2,}/\|/g;
+    $titles=~s/\|$//;
+
+    my $hash = {
+	action => 'query',
+	titles => $titles,
+	iilimit => 1,
+	prop => 'imageinfo'};
 
 #	use Data::Dumper; print Dumper($hash);
-	my $res = $self->{api}->api($hash);
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
+    my $res = $self->{api}->api($hash);
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
 #	use Data::Dumper; print Dumper($res);
-	foreach my $id (keys %{$res->{query}->{pages}}) {
-		my $title=$res->{query}->{pages}->{$id}->{title};
-		if ($res->{query}->{pages}->{$id}->{imagerepository} eq 'shared') {
-			$return->{$title}=2;
-		} elsif (defined($res->{query}->{pages}->{$id}->{missing})) {
-			$return->{$title}=0;
-		} elsif ($res->{query}->{pages}->{$id}->{imagerepository} eq '') {
-			$return->{$title}=3;
-		} elsif ($res->{query}->{pages}->{$id}->{imagerepository} eq 'local') {
-			$return->{$title}=1;
-		}
+    foreach my $id (keys %{$res->{query}->{pages}}) {
+	my $title=$res->{query}->{pages}->{$id}->{title};
+	if ($res->{query}->{pages}->{$id}->{imagerepository} eq 'shared') {
+	    $return->{$title}=2;
+	} elsif (defined($res->{query}->{pages}->{$id}->{missing})) {
+	    $return->{$title}=0;
+	} elsif ($res->{query}->{pages}->{$id}->{imagerepository} eq '') {
+	    $return->{$title}=3;
+	} elsif ($res->{query}->{pages}->{$id}->{imagerepository} eq 'local') {
+	    $return->{$title}=1;
 	}
-	if (scalar(@pages)==1) {
-		return $return->{$pages[0]};
-	} else {
-		return $return;
-	}
+    }
+    if (scalar(@pages)==1) {
+	return $return->{$pages[0]};
+    } else {
+	return $return;
+    }
 }
 
 =item delete_page($page[, $summary])
@@ -820,29 +885,29 @@ Deletes the page with the specified summary.
 =cut
 
 sub delete_page {
-	my $self	= shift;
-	my $page	= shift;
-	my $summary = shift;
+    my $self	= shift;
+    my $page	= shift;
+    my $summary = shift;
 
-	my $res = $self->{api}->api( {
-		action=>'query',
-		titles=>$page,
-		prop=>'info|revisions',
-		intoken=>'delete' } );
-	my ($id, $data)=%{$res->{query}->{pages}};
-	my $edittoken=$data->{deletetoken};
-	$res = $self->{api}->api( {
-		action=>'delete',
-		title=>$page,
-		token=>$edittoken,
-		reason=>$summary } );
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
-	return $res;
+    my $res = $self->{api}->api( {
+	    action=>'query',
+	    titles=>$page,
+	    prop=>'info|revisions',
+	    intoken=>'delete' } );
+    my ($id, $data)=%{$res->{query}->{pages}};
+    my $edittoken=$data->{deletetoken};
+    $res = $self->{api}->api( {
+	    action=>'delete',
+	    title=>$page,
+	    token=>$edittoken,
+	    reason=>$summary } );
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
+    return $res;
 }
 
 =item delete_old_image($page, $revision[, $summary])
@@ -852,31 +917,31 @@ Deletes the specified revision of the image with the specified summary.
 =cut
 
 sub delete_old_image {
-	my $self	= shift;
-	my $page	= shift;
-	my $id	= shift;
-	my $summary = shift;
-	my $image	= $page;
-	$image=~s/\s/_/g;
-	$image=~s/\%20/_/g;
-	$image=~s/Image://gi;
-	my $res	 = $self->_get( $page, 'delete', "&oldimage=$id%21$image" );
-	unless ($res) { return; }
-	my $options = {
-		   fields	=> {
-				wpReason  => $summary,
-			},
-		};
-	$res = $self->{mech}->submit_form( %{$options});
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
+    my $self	= shift;
+    my $page	= shift;
+    my $id	= shift;
+    my $summary = shift;
+    my $image	= $page;
+    $image=~s/\s/_/g;
+    $image=~s/\%20/_/g;
+    $image=~s/Image://gi;
+    my $res	 = $self->_get( $page, 'delete', "&oldimage=$id%21$image" );
+    unless ($res) { return; }
+    my $options = {
+	fields	=> {
+	    wpReason  => $summary,
+	},
+    };
+    $res = $self->{mech}->submit_form( %{$options});
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
 #use Data::Dumper;print Dumper($res);
 #print $res->decoded_content."\n";
-	return $res;
+    return $res;
 }
 
 =item block($user, $length, $summary, $anononly, $autoblock, $blockaccountcreation, $blockemail, $blocktalk)
@@ -886,50 +951,50 @@ Blocks the user with the specified options.  All options optional except $user a
 =cut
 
 sub block {
-	my $self	= shift;
-	my $user	= shift;
-	my $length  = shift;
-	my $summary = shift;
-	my $anononly= shift;
-	my $autoblock=shift;
-	my $blockac = shift;
-	my $blockemail=shift;
-	my $blocktalk	= shift;
-	my $res;
-	my $edittoken;
-	
-	if ($self->{'blocktoken'}) {
-		$edittoken=$self->{'blocktoken'};
-	} else {
-		$res = $self->{api}->api( {
-			action=>'query',
-			titles=>'Main_Page',
-			prop=>'info|revisions',
-			intoken=>'block' } );
+    my $self	= shift;
+    my $user	= shift;
+    my $length  = shift;
+    my $summary = shift;
+    my $anononly= shift;
+    my $autoblock=shift;
+    my $blockac = shift;
+    my $blockemail=shift;
+    my $blocktalk	= shift;
+    my $res;
+    my $edittoken;
+
+    if ($self->{'blocktoken'}) {
+	$edittoken=$self->{'blocktoken'};
+    } else {
+	$res = $self->{api}->api( {
+		action=>'query',
+		titles=>'Main_Page',
+		prop=>'info|revisions',
+		intoken=>'block' } );
 	my ($id, $data)=%{$res->{query}->{pages}};
 	$edittoken=$data->{blocktoken};
 	$self->{'blocktoken'}=$edittoken;
-	}
-	my $hash = {
-		action=>'block',
-		user=>$user,
-		token=>$edittoken,
-		expiry=>$length,
-		reason=>$summary };
-	$hash->{anononly}=$anononly if ($anononly);
-	$hash->{autoblock}=$autoblock if ($autoblock);
-	$hash->{nocreate}=$blockac if ($blockac);
-	$hash->{noemail}=$blockemail if ($blockemail);
-	$hash->{allowusertalk}=1 if (!$blocktalk);
-	$res = $self->{api}->api( $hash );
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
+    }
+    my $hash = {
+	action=>'block',
+	user=>$user,
+	token=>$edittoken,
+	expiry=>$length,
+	reason=>$summary };
+    $hash->{anononly}=$anononly if ($anononly);
+    $hash->{autoblock}=$autoblock if ($autoblock);
+    $hash->{nocreate}=$blockac if ($blockac);
+    $hash->{noemail}=$blockemail if ($blockemail);
+    $hash->{allowusertalk}=1 if (!$blocktalk);
+    $res = $self->{api}->api( $hash );
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
 
-	return $res;
+    return $res;
 }
 
 =item unblock($user)
@@ -939,35 +1004,35 @@ Unblocks the user.
 =cut
 
 sub unblock {
-	my $self	= shift;
-	my $user	= shift;
-	my $res;
-	my $edittoken;
-	if ($self->{'unblocktoken'}) {
-		$edittoken=$self->{'unblocktoken'};
-	} else {
-		$res = $self->{api}->api( {
-			action=>'query',
-			titles=>'Main_Page',
-			prop=>'info|revisions',
-			intoken=>'unblock' } );
-		my ($id, $data)=%{$res->{query}->{pages}};
-		$edittoken=$data->{unblocktoken};
-		$self->{'unblocktoken'}=$edittoken;
-	}
-	my $hash = {
-		action=>'unblock',
-		user=>$user,
-		token=>$edittoken};
-	$res = $self->{api}->api( $hash );
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
+    my $self	= shift;
+    my $user	= shift;
+    my $res;
+    my $edittoken;
+    if ($self->{'unblocktoken'}) {
+	$edittoken=$self->{'unblocktoken'};
+    } else {
+	$res = $self->{api}->api( {
+		action=>'query',
+		titles=>'Main_Page',
+		prop=>'info|revisions',
+		intoken=>'unblock' } );
+	my ($id, $data)=%{$res->{query}->{pages}};
+	$edittoken=$data->{unblocktoken};
+	$self->{'unblocktoken'}=$edittoken;
+    }
+    my $hash = {
+	action=>'unblock',
+	user=>$user,
+	token=>$edittoken};
+    $res = $self->{api}->api( $hash );
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
 
-	return $res;
+    return $res;
 }
 
 =item protect($page, $reason, $editlvl, $movelvl, $time, $cascade)
@@ -977,41 +1042,41 @@ Protects (or unprotects) the page. $editlvl and $movelvl may be '', 'autoconfirm
 =cut
 
 sub protect {
-	my $self	= shift;
-	my $page	= shift;
-	my $reason	= shift;
-	my $editlvl	= shift || 'all';
-	my $movelvl 	= shift || 'all';
-	my $time	= shift || 'infinite';
-	my $cascade	= shift;
-	
-	if ($cascade and ($editlvl ne 'sysop' or $movelvl ne 'sysop')) {
-		carp "Can't set cascading unless both editlvl and movelvl are sysop."
-	}
-	my $res = $self->{api}->api( {
-		action=>'query',
-		titles=>$page,
-		prop=>'info|revisions',
-		intoken=>'protect' } );
-#use Data::Dumper;print STDERR Dumper($res);
-	my ($id, $data)=%{$res->{query}->{pages}};
-	my $edittoken=$data->{protecttoken};
-	my $hash={	action=>'protect',
-		title=>$page,
-		token=>$edittoken,
-		reason=>$reason,
-		protections=>"edit=$editlvl|move=$movelvl",
-		expiry=>$time };
-	$hash->{'cascade'}=$cascade if ($cascade);
-	$res = $self->{api}->api( $hash );
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
+    my $self	= shift;
+    my $page	= shift;
+    my $reason	= shift;
+    my $editlvl	= shift || 'all';
+    my $movelvl 	= shift || 'all';
+    my $time	= shift || 'infinite';
+    my $cascade	= shift;
 
-	return $res;
+    if ($cascade and ($editlvl ne 'sysop' or $movelvl ne 'sysop')) {
+	carp "Can't set cascading unless both editlvl and movelvl are sysop."
+    }
+    my $res = $self->{api}->api( {
+	    action=>'query',
+	    titles=>$page,
+	    prop=>'info|revisions',
+	    intoken=>'protect' } );
+#use Data::Dumper;print STDERR Dumper($res);
+    my ($id, $data)=%{$res->{query}->{pages}};
+    my $edittoken=$data->{protecttoken};
+    my $hash={	action=>'protect',
+	title=>$page,
+	token=>$edittoken,
+	reason=>$reason,
+	protections=>"edit=$editlvl|move=$movelvl",
+	expiry=>$time };
+    $hash->{'cascade'}=$cascade if ($cascade);
+    $res = $self->{api}->api( $hash );
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
+
+    return $res;
 }
 
 =item get_pages_in_namespace($namespace_id,$page_limit)
@@ -1021,40 +1086,40 @@ Returns an array containing the names of all pages in the specified namespace. T
 =cut
 
 sub get_pages_in_namespace {
-	my $self = shift;
-	my $namespace = shift;
-	my $page_limit = shift || 500;
-	my $apilimit=500;
-	if ($self->{highlimits}) {
-		$apilimit=5000;
-	}
+    my $self = shift;
+    my $namespace = shift;
+    my $page_limit = shift || 500;
+    my $apilimit=500;
+    if ($self->{highlimits}) {
+	$apilimit=5000;
+    }
 
- 	my @return;
-	my $max;
+    my @return;
+    my $max;
 
-	if ($page_limit<=$apilimit) {
-		$max=1;
-	} else {
-		$max=($page_limit-1)/$apilimit+1;
-		$page_limit=$apilimit;
-	}
+    if ($page_limit<=$apilimit) {
+	$max=1;
+    } else {
+	$max=($page_limit-1)/$apilimit+1;
+	$page_limit=$apilimit;
+    }
 
-	my $res = $self->{api}->list( {
-		action=>'query',
-		list=>'allpages',
-		apnamespace=>$namespace,
-		aplimit=>$page_limit },
-		{ max=>$max } );
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
-	foreach (@{$res}) {
-		push @return, $_->{title};
-	}
-	return @return;
+    my $res = $self->{api}->list( {
+	    action=>'query',
+	    list=>'allpages',
+	    apnamespace=>$namespace,
+	    aplimit=>$page_limit },
+	{ max=>$max } );
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
+    foreach (@{$res}) {
+	push @return, $_->{title};
+    }
+    return @return;
 }
 
 =item count_contributions($user)
@@ -1064,28 +1129,28 @@ Uses the API to count $user's contributions.
 =cut
 
 sub count_contributions {
-	my $self=shift;
-	my $username=shift;
-	$username=~s/User://i; #strip namespace
-	my $res = $self->{api}->list( {
-		action=>'query',
-		list=>'users',
-		ususers=>$username,
-		usprop=>'editcount' },
-		{ max=>1 } );
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
-	my $return = ${$res}[0]->{'editcount'};
+    my $self=shift;
+    my $username=shift;
+    $username=~s/User://i; #strip namespace
+    my $res = $self->{api}->list( {
+	    action=>'query',
+	    list=>'users',
+	    ususers=>$username,
+	    usprop=>'editcount' },
+	{ max=>1 } );
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
+    my $return = ${$res}[0]->{'editcount'};
 
-	if ($return or $_[0]>1) {
-		return $return;
-	} else {
-		return $self->count_contributions($username, $_[0]+1);
-	}
+    if ($return or $_[0]>1) {
+	return $return;
+    } else {
+	return $self->count_contributions($username, $_[0]+1);
+    }
 }
 
 =item last_active($user)
@@ -1095,22 +1160,22 @@ Returns the last active time of $user in YYYY-MM-DDTHH:MM:SSZ
 =cut
 
 sub last_active {
-	my $self=shift;
-	my $username=shift;
-	unless ($username=~/User:/i) {$username="User:".$username;}
-	my $res = $self->{api}->list( {
-		action=>'query',
-		list=>'usercontribs',
-		ucuser=>$username,
-		uclimit=>1 },
-		{ max=>1 } );
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
-	return ${$res}[0]->{'timestamp'};
+    my $self=shift;
+    my $username=shift;
+    unless ($username=~/User:/i) {$username="User:".$username;}
+    my $res = $self->{api}->list( {
+	    action=>'query',
+	    list=>'usercontribs',
+	    ucuser=>$username,
+	    uclimit=>1 },
+	{ max=>1 } );
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
+    return ${$res}[0]->{'timestamp'};
 }
 
 =item recent_edit_to_page($page)
@@ -1120,22 +1185,22 @@ Returns timestamp and username for most recent edit to $page.
 =cut
 
 sub recent_edit_to_page {
-	my $self=shift;
-	my $page=shift;
-	my $res = $self->{api}->api( {
-		action=>'query',
-		prop=>'revisions',
-		titles=>$page,
-		rvlimit=>1 },
-		{ max=>1 } );
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
-	my ($id, $data)=%{$res->{query}->{pages}};
-	return $data->{revisions}[0]->{timestamp};
+    my $self=shift;
+    my $page=shift;
+    my $res = $self->{api}->api( {
+	    action=>'query',
+	    prop=>'revisions',
+	    titles=>$page,
+	    rvlimit=>1 },
+	{ max=>1 } );
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
+    my ($id, $data)=%{$res->{query}->{pages}};
+    return $data->{revisions}[0]->{timestamp};
 }
 
 =item get_users($page, $limit, $revision, $direction)
@@ -1145,44 +1210,44 @@ Gets the most recent editors to $page, up to $limit, starting from $revision and
 =cut
 
 sub get_users {
-	my $self	  = shift;
-	my $pagename  = shift;
-	my $limit	 = shift || 5;
-	my $rvstartid = shift;
-	my $direction = shift;
+    my $self	  = shift;
+    my $pagename  = shift;
+    my $limit	 = shift || 5;
+    my $rvstartid = shift;
+    my $direction = shift;
 
-	my @return;
-	my @revisions;
-	
-	if ( $limit > 50 ) {
-		$self->{errstr} = "Error requesting history for $pagename: Limit may not be set to values above 50";
-		carp $self->{errstr};
-		return 1;
-	}
-	my $hash = {
-		action=>'query',
-		prop=>'revisions',
-		titles=>$pagename,
-		rvprop=>'ids|timestamp|user|comment',
-		rvlimit=>$limit
-	};
+    my @return;
+    my @revisions;
 
-	$hash->{rvstartid}=$rvstartid if ($rvstartid);
-	$hash->{rvdir}=$direction if ($direction);
+    if ( $limit > 50 ) {
+	$self->{errstr} = "Error requesting history for $pagename: Limit may not be set to values above 50";
+	carp $self->{errstr};
+	return 1;
+    }
+    my $hash = {
+	action=>'query',
+	prop=>'revisions',
+	titles=>$pagename,
+	rvprop=>'ids|timestamp|user|comment',
+	rvlimit=>$limit
+    };
 
-	my $res = $self->{api}->api( $hash );
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
-	my ($id)=keys %{$res->{query}->{pages}};
-	my $array=$res->{query}->{pages}->{$id}->{revisions};
-	foreach (@{$array}) {
-		push @return, $_->{user};
-	}
-	return @return;
+    $hash->{rvstartid}=$rvstartid if ($rvstartid);
+    $hash->{rvdir}=$direction if ($direction);
+
+    my $res = $self->{api}->api( $hash );
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
+    my ($id)=keys %{$res->{query}->{pages}};
+    my $array=$res->{query}->{pages}->{$id}->{revisions};
+    foreach (@{$array}) {
+	push @return, $_->{user};
+    }
+    return @return;
 }
 
 =item test_block_hist($user)
@@ -1192,22 +1257,22 @@ Returns 1 if $user has been blocked.
 =cut
 
 sub test_block_hist {
-	my $self	  = shift;
-	my $user	  = shift;
+    my $self	  = shift;
+    my $user	  = shift;
 
-	$user=~s/User://i;
-	my $res = $self->_get("Special:Log&type=block&page=User:$user", "", "", 1);
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
-	if ($res->decoded_content=~/no matching/i) {
-		return 0;
-	} else {
-		return 1;
-	}
+    $user=~s/User://i;
+    my $res = $self->_get("Special:Log&type=block&page=User:$user", "", "", 1);
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
+    if ($res->decoded_content=~/no matching/i) {
+	return 0;
+    } else {
+	return 1;
+    }
 }
 
 =item expandtemplates($page[, $text])
@@ -1217,25 +1282,25 @@ Expands templates on $page, using $text if provided, otherwise loading the page 
 =cut
 
 sub expandtemplates {
-	my $self	= shift;
-	my $page	= shift;
-	my $text	= shift || undef;
+    my $self	= shift;
+    my $page	= shift;
+    my $text	= shift || undef;
 
-	unless ($text) {
-		$text=$self->get_text($page);
-	}
+    unless ($text) {
+	$text=$self->get_text($page);
+    }
 
-	my $res = $self->_get( "Special:ExpandTemplates" );
-	my $options = {
-		fields	=> {
-			contexttitle	=> $page,
-			input		=> $text,
-			removecomments  => undef,
-		},
-	};
-	$res = $self->{mech}->submit_form( %{$options});
-	$res->decoded_content=~/\<textarea id=\"output\"(.+?)\<\/textarea\>/si;
-	return $1;
+    my $res = $self->_get( "Special:ExpandTemplates" );
+    my $options = {
+	fields	=> {
+	    contexttitle	=> $page,
+	    input		=> $text,
+	    removecomments  => undef,
+	},
+    };
+    $res = $self->{mech}->submit_form( %{$options});
+    $res->decoded_content=~/\<textarea id=\"output\"(.+?)\<\/textarea\>/si;
+    return $1;
 }
 
 =item undelete($page, $summary)
@@ -1245,32 +1310,32 @@ Undeletes $page with $summary.
 =cut
 
 sub undelete {
-	my $self	= shift;
-	my $page	= shift;
-	my $summary = shift;
-	my $res	 = $self->_get( "Special:Undelete", "", "&target=$page" );
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
-	if ($res->decoded_content=~/There is no revision history for this page/i) {
-		return 1;
-	}
-	my $options = {
-		   fields	=> {
-				wpComment  => $summary,
-			},
-		};
-	$res = $self->{mech}->submit_form( %{$options}, button=>"restore");
-	if (!$res) {
-		carp "Error code: " . $self->{api}->{error}->{code};
-		carp $self->{api}->{error}->{details};
-		$self->{error}=$self->{api}->{error};
-		return $self->{error}->{code};
-	}
-	return $res;
+    my $self	= shift;
+    my $page	= shift;
+    my $summary = shift;
+    my $res	 = $self->_get( "Special:Undelete", "", "&target=$page" );
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
+    if ($res->decoded_content=~/There is no revision history for this page/i) {
+	return 1;
+    }
+    my $options = {
+	fields	=> {
+	    wpComment  => $summary,
+	},
+    };
+    $res = $self->{mech}->submit_form( %{$options}, button=>"restore");
+    if (!$res) {
+	carp "Error code: " . $self->{api}->{error}->{code};
+	carp $self->{api}->{error}->{details};
+	$self->{error}=$self->{api}->{error};
+	return $self->{error}->{code};
+    }
+    return $res;
 }
 
 =item get_allusers($limit)
@@ -1280,20 +1345,20 @@ Returns an array of all users. Default limit is 500.
 =cut
 
 sub get_allusers {
-	my $self  = shift;
-	my $limit = shift;
-	my @return = ();
+    my $self  = shift;
+    my $limit = shift;
+    my @return = ();
 
-	$limit = 500 unless $limit;
+    $limit = 500 unless $limit;
 
-	my $res = $self->{api}->api( { action  =>'query',
-		 list    =>'allusers',
-		 aulimit => $limit } );
+    my $res = $self->{api}->api( { action  =>'query',
+	    list    =>'allusers',
+	    aulimit => $limit } );
 
-	for my $ref ( @{$res->{query}->{allusers}} ) {
-		push @return, $ref->{name};
-	}
-	return @return;
+    for my $ref ( @{$res->{query}->{allusers}} ) {
+	push @return, $ref->{name};
+    }
+    return @return;
 }
 
 
