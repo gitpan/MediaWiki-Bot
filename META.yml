@@ -1,12 +1,14 @@
 --- #YAML:1.0
 name:               MediaWiki-Bot
-version:            2.3.0
+version:            2.3.1
 abstract:           a Wikipedia bot framework written in Perl
 author:
     - Perlwikipedia team
 license:            gpl
 distribution_type:  module
 configure_requires:
+    ExtUtils::MakeMaker:  0
+build_requires:
     ExtUtils::MakeMaker:  0
 requires:
     Carp:               0
@@ -21,7 +23,7 @@ no_index:
     directory:
         - t
         - inc
-generated_by:       ExtUtils::MakeMaker version 6.48
+generated_by:       ExtUtils::MakeMaker version 6.54
 meta-spec:
     url:      http://module-build.sourceforge.net/META-spec-v1.4.html
     version:  1.4
