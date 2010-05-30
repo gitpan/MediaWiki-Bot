@@ -7,20 +7,25 @@
 
 use strict;
 use warnings;
-use Test::More tests => 4;
+use Test::More tests => 2;
 
 #########################
 
 # Insert your test code below, the Test::More module is use()ed here so read
 # its man page ( perldoc Test::More ) for help writing this test script.
+
 use MediaWiki::Bot;
 
-my $bot = MediaWiki::Bot->new('STWP');
+my $bot = MediaWiki::Bot->new('PWP test');
 
-is($bot->login('Perlwikipedia testing', 'test'), 1, 'Log in');
-ok($bot->_is_loggedin(),                            "Double-check we're logged in");
+if(defined($ENV{'PWPMakeTestSetWikiHost'})) {
+    $bot->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
+}
 
-my $cookiemonster = MediaWiki::Bot->new('STWP');
+# Jimbo has been blocked before
+my $result = $bot->was_blocked('User:Jimbo Wales');
+is($result, 1, 'block history');
 
-is ($cookiemonster->login('Perlwikipedia testing'), 1, 'Cookie log in');
-ok($bot->_is_loggedin(),                            "Double-check we're cookie logged in");
+# I haven't ever been blocked
+$result = $bot->was_blocked('User:Mike.lifeguard');
+is($result, 0, 'block history');

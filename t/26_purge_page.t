@@ -5,28 +5,31 @@
 
 # change 'tests => 1' to 'tests => last_test_to_print';
 
-use strict;
-use warnings;
-use Test::More tests => 1;
+use Test::More tests => 3;
 
 #########################
 
 # Insert your test code below, the Test::More module is use()ed here so read
 # its man page ( perldoc Test::More ) for help writing this test script.
 
+use strict;
+use warnings;
 use MediaWiki::Bot;
 
-my $bot = MediaWiki::Bot->new('MediaWiki::Bot tests', 'admin');
+my $bot = MediaWiki::Bot->new();
 
 if(defined($ENV{'PWPMakeTestSetWikiHost'})) {
     $bot->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
 }
 
-SKIP: {
-#   skip("Skipping edit test for now",2);
+$bot->login('Perlwikipedia testing', 'test');
 
-    my $rand = rand();
-    print STDERR "\rYou should receive another error message here regarding a failed assertion.\n";
-    my $status = $bot->edit('User:ST47/test', $rand, 'false');
-    is($status->{'edit'}->{'result'}, 'Failure', 'Intentionally bad assertion');
-}
+my $result = $bot->purge_page('Main Page');
+is($result, 1, 'Purge a single page');
+
+$result = $bot->purge_page('tsixe reven lliw');
+is($result, 0, 'Fail to purge a non-existent page');
+
+my @purges = ('Main Page', 'Main Page', 'tsixe reven lliw', 'User:Mike.lifeguard');
+$result = $bot->purge_page(\@purges);
+is($result, 2, 'Purge some of an array of pages');

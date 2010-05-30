@@ -5,21 +5,25 @@
 
 # change 'tests => 1' to 'tests => last_test_to_print';
 
-use Test::More tests => 1;
+use strict;
+use warnings;
+use Test::More tests => 2;
 
 #########################
 
 # Insert your test code below, the Test::More module is use()ed here so read
 # its man page ( perldoc Test::More ) for help writing this test script.
 
-use strict;
 use MediaWiki::Bot;
 
-my $wikipedia = MediaWiki::Bot->new("PWP test");
+my $bot = MediaWiki::Bot->new();
 
 if(defined($ENV{'PWPMakeTestSetWikiHost'})) {
-	$wikipedia->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
+    $bot->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
 }
 
-my $result = $wikipedia->test_block_hist("User:Jimbo Wales");
-is($result, 1, "block history");
+my $result = $bot->get_id('Main Page');
+is($result, 15580374, 'Main Page found');
+
+$result = $bot->get_text('egaP niaM');
+is($result, undef, 'No page found');

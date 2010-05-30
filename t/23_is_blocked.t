@@ -7,7 +7,7 @@
 
 use strict;
 use warnings;
-use Test::More tests => 1;
+use Test::More tests => 2;
 
 #########################
 
@@ -16,17 +16,17 @@ use Test::More tests => 1;
 
 use MediaWiki::Bot;
 
-my $bot = MediaWiki::Bot->new('MediaWiki::Bot tests', 'admin');
+my $bot = MediaWiki::Bot->new('PWP test');
 
 if(defined($ENV{'PWPMakeTestSetWikiHost'})) {
     $bot->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
 }
 
-SKIP: {
-#   skip("Skipping edit test for now",2);
+# Jimbo is almost certainly not blocked right now
+my $result = $bot->is_blocked('User:Jimbo Wales');
+is($result, 0, 'current blocks');
 
-    my $rand = rand();
-    print STDERR "\rYou should receive another error message here regarding a failed assertion.\n";
-    my $status = $bot->edit('User:ST47/test', $rand, 'false');
-    is($status->{'edit'}->{'result'}, 'Failure', 'Intentionally bad assertion');
-}
+# A random old account I chose - it will probably be blocked forever
+# (del/undel) 23:44, 31 December 2006 Agathoclea (talk | contribs | block) blocked Deathtonoobs (talk | contribs) with an expiry time of indefinite (vandalism only - offensive username) (unblock | change block)
+$result = $bot->is_blocked('User:Deathtonoobs');
+is($result, 1, 'current blocks');

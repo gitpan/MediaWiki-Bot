@@ -5,6 +5,8 @@
 
 # change 'tests => 1' to 'tests => last_test_to_print';
 
+use strict;
+use warnings;
 use Test::More tests => 4;
 
 #########################
@@ -12,22 +14,22 @@ use Test::More tests => 4;
 # Insert your test code below, the Test::More module is use()ed here so read
 # its man page ( perldoc Test::More ) for help writing this test script.
 
-use strict;
 use MediaWiki::Bot;
 
-my $wikipedia = MediaWiki::Bot->new;
+my $bot = MediaWiki::Bot->new();
 
 if(defined($ENV{'PWPMakeTestSetWikiHost'})) {
-	$wikipedia->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
+    $bot->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
 }
 
-my $result = $wikipedia->get_text("Main Page");
-like( $result, qr/Main Page/, "Main Page found" );
+my $wikitext = $bot->get_text('Main Page');
+like($wikitext, qr/Main Page/, 'Main Page found');
+$wikitext = $bot->get_text('User:Mike.lifeguard/12 get text.t');
 
-$result = $wikipedia->get_text("God");
-my $resultsection = $wikipedia->get_text("God", '', 3);
-isnt($resultsection, 2, "Section load pass/fail");
-isnt(length($result), length($resultsection), "Section loaded content correct");
+$wikitext = $bot->get_text('God');
+my $section_wikitext = $bot->get_text('God', '', 3);
+isnt($section_wikitext, undef, 'Section load pass/fail');
+isnt($wikitext, $section_wikitext, 'Section loaded content correctly');
 
-$result = $wikipedia->get_text("egaP niaM");
-is( $result, 2, "No page found" );
+$wikitext = $bot->get_text('egaP niaM');
+is($wikitext, undef, 'No page found');

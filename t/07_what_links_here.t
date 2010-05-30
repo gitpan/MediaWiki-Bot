@@ -5,7 +5,9 @@
 
 # change 'tests => 1' to 'tests => last_test_to_print';
 
-use Test::More tests => 1;
+use strict;
+use warnings;
+use Test::More tests => 7;
 
 #########################
 
@@ -13,14 +15,21 @@ use Test::More tests => 1;
 # its man page ( perldoc Test::More ) for help writing this test script.
 use MediaWiki::Bot;
 
-$wikipedia=MediaWiki::Bot->new("make test");
-$article="WMIZ";
+my $bot = MediaWiki::Bot->new('make test');
 
 if(defined($ENV{'PWPMakeTestSetWikiHost'})) {
-	$wikipedia->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
-	$article="Main Page" unless ($ENV{'PWPMakeTestSetWikiHost'}.$ENV{'PWPMakeTestSetWikiDir'} eq 'en.wikipedia.orgw');
+    $bot->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
 }
 
-my @links = $wikipedia->what_links_here($article);
+my @pages = $bot->what_links_here('Main Page', 'redirects', undef, {max=>1});
 
-ok( defined $links[0]->{title} );
+ok(     defined $pages[0],                                  'Something was returned');
+isa_ok( $pages[0],                      'HASH',             'A hash was returned');
+ok(     defined $pages[0]->{'title'},                       'The hash contains a title');
+like(   $pages[0]->{'title'},           qr/\w+/,            'The title looks valid');
+ok(     defined $pages[0]->{'redirect'},                    'Redirect status is defined');
+ok(     defined($pages[0]->{'redirect'}),                   'We got a redirect when we asked for it');
+
+@pages = $bot->what_links_here('Main Page', 'nonredirects', undef, {max=>1});
+
+isnt(     defined($pages[0]->{'redirect'}),                   'We got a normal link when we asked for no redirects');
