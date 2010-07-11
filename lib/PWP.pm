@@ -4,7 +4,7 @@ use MediaWiki::Bot; BEGIN{ *PWP:: = \%MediaWiki::Bot:: } our $VERSION=$PWP::VERS
 
 =head1 NAME
 
-PWP - Alias for Perlwikipedia, now known as MediaWiki::Bot
+PWP - Alias for MediaWiki::Bot, previously known as perlwikipedia or PWP
 
 =head1 SYNOPSIS
 

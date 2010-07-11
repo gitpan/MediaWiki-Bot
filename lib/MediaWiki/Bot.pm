@@ -18,19 +18,28 @@ foreach my $plugin (__PACKAGE__->plugins) {
     $plugin->import();
 }
 
-our $VERSION = '3.0.0';
+our $VERSION = '3.1.5';
 
 =head1 NAME
 
-MediaWiki::Bot - a Wikipedia bot framework written in Perl
+MediaWiki::Bot - a MediaWiki bot framework written in Perl
 
 =head1 SYNOPSIS
 
 use MediaWiki::Bot;
 
-my $editor = MediaWiki::Bot->new('Account');
-$editor->login('Account', 'password');
-$editor->revert('Wikipedia:Sandbox', 'Reverting vandalism', '38484848');
+my $bot = MediaWiki::Bot->new({
+    useragent   => 'MediaWiki::Bot 3.0.0 (User:Mike.lifeguard)',
+    assert      => 'bot',
+    protocol    => 'https',
+    host        => 'secure.wikimedia.org',
+    path        => 'wikipedia/meta/w',
+    login_data  => { username => "Mike's bot account", password => "password" },
+});
+
+my $revid = $bot->get_last("User:Mike.lifeguard/sandbox", "Mike.lifeguard");
+print "Reverting to $revid\n" if defined($revid);
+$bot->revert('User:Mike.lifeguard', $revid, 'rvv');
 
 =head1 DESCRIPTION
 
@@ -95,14 +104,14 @@ login_data is a hashref of data to pass to login(). See that section for a descr
 
 For example:
 
-    my $bot = MediaWiki::Bot->new(
+    my $bot = MediaWiki::Bot->new({
         useragent   => 'MediaWiki::Bot 3.0.0 (User:Mike.lifeguard)',
         assert      => 'bot',
         protocol    => 'https',
         host        => 'secure.wikimedia.org',
         path        => 'wikipedia/meta/w',
         login_data  => { username => "Mike's bot account", password => "password" },
-    );
+    });
 
 For backward compatibility, you can specify up to three parameters:
 
@@ -166,6 +175,7 @@ sub new {
     $self->{assert}                   = $assert;
     $self->{operator}                 = $operator;
     $self->{api}                      = MediaWiki::API->new();
+    $self->{api}->{ua}->agent($agent);
 
     # Set wiki if these are set
     $self->set_wiki({
@@ -248,9 +258,17 @@ sub set_wiki {
         $protocol = 'http';
     }
 
+    # Invalidate wiki-specific cached data
+    if (($self->{'host'} ne $host)
+        or ($self->{'path'} ne $path)
+        or ($self->{'protocol'} ne $protocol)
+    ) {
+        delete $self->{'ns_data'} if $self->{'ns_data'};
+    }
+
+    $self->{protocol} = $protocol;
     $self->{host} = $host;
     $self->{path} = $path;
-    $self->{protocol} = $protocol;
 
     $self->{api}->{config}->{api_url} = "$protocol://$host/$path/api.php";
     print "Wiki set to $protocol://$host/$path/api.php\n" if $self->{debug};
@@ -381,7 +399,7 @@ sub logout {
 
 =head2 edit($options_hashref)
 
-Puts text on a page. If provided, use a specified edit summary, mark the edit as minor, as a non-bot edit, or add an assertion. An MD5 hash is sent to guard against data corruption while in transit.
+Puts text on a page. If provided, use a specified edit summary, mark the edit as minor, as a non-bot edit, or add an assertion. Set section to edit a single section instead of the whole page. An MD5 hash is sent to guard against data corruption while in transit.
 
     my $text = $bot->get_text('My page');
     $text .= "\n\n* More text\n";
@@ -389,6 +407,7 @@ Puts text on a page. If provided, use a specified edit summary, mark the edit as
         page    => 'My page',
         text    => $text,
         summary => 'Adding new content',
+        section => 'new',
     });
 
 You can also call this using the deprecated form:
@@ -405,6 +424,7 @@ sub edit {
     my $is_minor;
     my $assert;
     my $markasbot;
+    my $section;
 
     if (ref $_[0] eq 'HASH') {
         $page       = $_[0]->{'page'};
@@ -413,6 +433,7 @@ sub edit {
         $is_minor   = $_[0]->{'is_minor'};
         $assert     = $_[0]->{'assert'};
         $markasbot  = $_[0]->{'markasbot'};
+        $section    = $_[0]->{'section'};
     }
     else {
         $page       = shift;
@@ -421,6 +442,7 @@ sub edit {
         $is_minor   = shift;
         $assert     = shift;
         $markasbot  = shift;
+        $section    = shift;
     }
     # Set defaults
     $summary = 'BOT: Changing page text' unless $summary;
@@ -448,6 +470,7 @@ sub edit {
         assert          => $assert,
         minor           => $is_minor,
     };
+    $hash->{'section'} = $section if defined($section);
 
     my $res = $self->{api}->api($hash); # Check if MediaWiki::API::edit() is good enough
     if (!$res) {
@@ -480,6 +503,52 @@ sub edit {
         }
     }
     return $res;
+}
+
+=head2 move($from, $to, $reason, $options_hashref)
+
+This moves a page from $from to $to. If you wish to specify more options (like whether to suppress creation of a redirect), use $options_hashref.
+
+=over 4
+
+=item *
+movetalk specifies whether to attempt to the talk page.
+
+=item *
+noredirect specifies whether to suppress creation of a redirect.
+
+=back
+
+    my @pages = ("Humor", "Rumor");
+    foreach my $page (@pages) {
+        my $to = $page;
+        $to =~ s/or$/our/;
+        $bot->move($page, $to, "silly 'merricans");
+    }
+
+=cut
+
+sub move {
+    my $self   = shift;
+    my $from   = shift;
+    my $to     = shift;
+    my $reason = shift;
+    my $opts   = shift;
+
+    my $hash = {
+        action  => 'move',
+        from    => $from,
+        to      => $to,
+        reason  => $reason,
+    };
+    $hash->{'movetalk'}   = $opts->{'movetalk'}   if defined($opts->{'movetalk'});
+    $hash->{'noredirect'} = $opts->{'noredirect'} if defined($opts->{'noredirect'});
+
+    my $res = $self->{api}->edit($hash);
+    if (!$res) {
+        return $self->_handle_api_error();
+    }
+    return $res; # should we return something more useful?
 }
 
 =head2 get_history($pagename[,$limit])
@@ -628,7 +697,7 @@ Returns the text of the specified pages in a hashref. Content of undef means pag
 
 sub get_pages {
     my $self  = shift;
-    my @pages = @_;
+    my @pages = (ref $_[0] eq 'ARRAY') ? @{$_[0]} : @_;
     my %return;
 
     my $hash = {
@@ -708,7 +777,10 @@ sub get_pages {
 
 Reverts the specified page to $revid, with an edit summary of $summary. A default edit summary will be used if $summary is omitted.
 
-    $bot->revert('User:Mike.lifeguard', 1972950, 'rvv');
+    my $revid = $bot->get_last("User:Mike.lifeguard/sandbox", "Mike.lifeguard");
+    print "Reverting to $revid\n" if defined($revid);
+    $bot->revert('User:Mike.lifeguard', $revid, 'rvv');
+
 
 =cut
 
@@ -763,7 +835,8 @@ sub undo {
 Returns the revid of the last revision to $page not made by $user. undef is returned if no result was found, as would be the case if the page is deleted.
 
     my $revid = $bot->get_last("User:Mike.lifeguard/sandbox", "Mike.lifeguard");
-    print "$revid\n" if defined($revid);
+    print "Reverting to $revid\n" if defined($revid);
+    $bot->revert('User:Mike.lifeguard', $revid, 'rvv');
 
 =cut
 
@@ -951,58 +1024,101 @@ sub list_transclusions {
 
 =head2 get_pages_in_category($category_name)
 
-Returns an array containing the names of all pages in the specified category. Does not go into sub-categories.
+Returns an array containing the names of all pages in the specified category (include Category: prefix). Does not recurse into sub-categories.
+
+    my @pages = $bot->get_pages_in_category("Category:People on stamps of Gabon");
+    print "The pages in Category:People on stamps of Gabon are:\n@pages\n";
 
 =cut
 
 sub get_pages_in_category {
     my $self     = shift;
     my $category = shift;
+    my $options  = shift;
 
-    my @return;
-    my $res = $self->{api}->list(
-        {
-            action  => 'query',
-            list    => 'categorymembers',
-            cmtitle => $category,
-            cmlimit => 500
-        },
-    );
-    if (!$res) {
-        return $self->_handle_api_error();
+    if ($category =~ m/:/) { # It might have a namespace name
+        my ($cat, $title) = split(/:/, $category, 2);
+        if ($cat ne 'Category') { # 'Category' is a canonical name for ns14
+            my $ns_data = $self->_get_ns_data();
+            my $cat_ns_name = $ns_data->{'14'}; # ns14 gives us the localized name for 'Category'
+            if ($cat ne $cat_ns_name) {
+                $category = "$cat_ns_name:$category";
+            }
+        }
     }
-    foreach (@{$res}) {
-        push @return, $_->{title};
+    else { # Definitely no namespace name, since there's no colon
+        $category = "Category:$category";
     }
-    return @return;
+    warn "Category to fetch is [[$category]]" if $self->{'debug'};
+
+    my $hash = {
+        action  => 'query',
+        list    => 'categorymembers',
+        cmtitle => $category,
+    };
+    $options->{'max'} = 1 unless defined($options->{'max'});
+    delete($options->{'max'}) if $options->{'max'} == 0;
+
+    my $res = $self->{api}->list($hash, $options);
+    return if (! ref $res); # Not a hashref when using callback
+    return $self->_handle_api_error() unless $res;
+    my @pages;
+    foreach my $hash (@$res) {
+        my $title = $hash->{'title'};
+        push @pages, $title;
+    }
+    return @pages;
 }
 
-=head2 get_all_pages_in_category($category_name)
+=head2 get_all_pages_in_category($category_name[,$options_hashref])
 
-Returns an array containing the names of ALL pages in the specified category, including sub-categories.
+Returns an array containing the names of ALL pages in the specified category (include the Category: prefix), including sub-categories. The $options_hashref is the same as described for get_pages_in_category().
 
 =cut
+
+{   # Instead of using the state pragma, use a bare block
+my %data;
 
 sub get_all_pages_in_category {
     my $self          = shift;
     my $base_category = shift;
-    my @first         = $self->get_pages_in_category($base_category);
-    my %data;
+    my $options       = shift;
+    $options->{'max'} = 0 unless defined($options->{'max'});
+
+    my @first         = $self->get_pages_in_category($base_category, $options);
+    %data = () unless $_[0];    # This is a special flag for internal use.
+                                # It marks a call to this method as being
+                                # internal. Since %data is a fake state variable,
+                                # it needs to be cleared for every *external*
+                                # call, but not cleared when the call is recursive.
+
+    my $ns_data = $self->_get_ns_data();
+    my $cat_ns_name = $ns_data->{'14'};
+
     foreach my $page (@first) {
-        $data{$page} = '';
-        if ($page =~ /^Category:/) {
-            my @pages = $self->get_all_pages_in_category($page);
-            foreach (@pages) {
-                $data{$_} = '';
+        if ($page =~ m/^$cat_ns_name:/) {
+            if (!exists($data{$page})) {
+                $data{$page} = '';
+                my @pages = $self->get_all_pages_in_category($page, $options, 1);
+                foreach (@pages) {
+                    $data{$_}= '';
+                }
             }
+            else {
+                $data{$page} = '';
+            }
+        }
+        else {
+            $data{$page} = '';
         }
     }
     return keys %data;
 }
+} # This ends the bare block around get_all_pages_in_category()
 
 =head2 linksearch($link[,$ns[,$protocol[,$options]]])
 
-Runs a linksearch on the specified link and returns an array containing anonymous hashes with keys 'url' for the outbound URL, and 'title' for the page the link is on.  $ns is a namespace number to search (pass an arrayref to search in multiple namespaces). You can search by $protocol (http is default). The optional $options hashref is fully documented in MediaWiki::API.
+Runs a linksearch on the specified link and returns an array containing anonymous hashes with keys 'url' for the outbound URL, and 'title' for the page the link is on. $ns is a namespace number to search (pass an arrayref to search in multiple namespaces). You can search by $protocol (http is default). The optional $options hashref is fully documented in MediaWiki::API: Set `max` to limit the number of queries performed. Set `hook` to a subroutine reference to use a callback hook for incremental processing.
 
 Set max in $options to get more than one query's worth of results:
 
@@ -1026,7 +1142,6 @@ You can also specify a callback function in $options:
             print "$page: $url\n";
         }
     }
-
 
 =cut
 
@@ -1629,6 +1744,130 @@ sub domain_to_db {
     }
 }
 
+=head2 diff($options_hashref)
+
+This allows retrieval of a diff from the API. The return is a scalar containing the HTML table of the diff. Options are as follows:
+
+=over 4
+
+=item *
+title is the title to use. Provide I<either> this or revid.
+
+=item *
+revid is any revid to diff from. If you also specified title, only title will be honoured.
+
+=item *
+oldid is an identifier to diff to. This can be a revid, or the special values 'cur', 'prev' or 'next'
+
+=back
+
+=cut
+
+sub diff {
+    my $self = shift;
+    my $title;
+    my $revid;
+    my $oldid;
+
+    if (ref $_[0] eq 'HASH') {
+        $title = $_[0]->{'title'};
+        $revid = $_[0]->{'revid'};
+        $oldid = $_[0]->{'oldid'};
+    }
+    else {
+        $title = shift;
+        $revid = shift;
+        $oldid = shift;
+    }
+
+    my $hash = {
+        action      => 'query',
+        prop        => 'revisions',
+        rvdiffto    => $oldid,
+    };
+    if ($title) {
+        $hash->{'titles'} = $title;
+        $hash->{'rvlimit'} = 1;
+    }
+    elsif ($revid) {
+        $hash->{'revids'} = $revid;
+    }
+
+    my $res = $self->{api}->api($hash);
+    if (!$res) {
+        return $self->_handle_api_error();
+    }
+    my @revids = keys %{ $res->{'query'}->{'pages'} };
+    my $diff = $res->{'query'}->{'pages'}->{$revids[0]}->{'revisions'}->[0]->{'diff'}->{'*'};
+
+    return $diff;
+}
+
+=head2 prefixindex($prefix[,$filter[,$ns[,$options]]])
+
+This returns an array of hashrefs containing page titles that start with the given $prefix. $filter is one of 'all', 'redirects', or 'nonredirects'; $ns is a single namespace number (unlike linksearch etc, which can accept an arrayref of numbers). $options is a hashref as described in the section on linksearch() or in MediaWiki::API. The hashref has keys 'title' and 'redirect' (present if the page is a redirect, not present otherwise).
+
+    my @prefix_pages = $bot->prefixindex("User:Mike.lifeguard");
+    # Or, the more efficient equivalent
+    my @prefix_pages = $bot->prefixindex("Mike.lifeguard", 2);
+    foreach my $hashref (@pages) {
+        my $title = $hashref->{'title'};
+        if $hashref->{'redirect'} {
+            print "$title is a redirect\n";
+        }
+        else {
+            print "$title\n is not a redirect\n";
+        }
+    }
+
+=cut
+
+sub prefixindex {
+    my $self    = shift;
+    my $prefix  = shift;
+    my $ns      = shift;
+    my $filter  = shift;
+    my $options = shift;
+
+    if (defined($filter) and $filter =~ m/(all|redirects|nonredirects)/) { # Verify
+        $filter = $1;
+    }
+
+    if (!$ns and $prefix =~ m/:/) {
+        print "Converted '$prefix' to..." if $self->{debug};
+        my ($name) = split(/:/, $prefix, 2);
+        my $ns_data = $self->_get_ns_data();
+        $ns = $ns_data->{$name};
+        $prefix =~ s/^$name://;
+        print "'$prefix' with a namespace filter $ns" if $self->{debug};
+    }
+
+    my $hash = {
+        action      => 'query',
+        list        => 'allpages',
+        apprefix    => $prefix,
+    };
+    $hash->{'apnamespace'} = $ns if $ns;
+    $hash->{'apfilterredir'} = $filter if $filter;
+
+    my $res = $self->{api}->list($hash, $options);
+
+    my @pages;
+    if (!$res) {
+        return $self->_handle_api_error();
+    }
+    else {
+        return undef if (! ref $res); # Not a ref when using callback hook
+        foreach my $hashref (@$res) {
+            my $title = $hashref->{'title'};
+            my $redirect = defined($hashref->{'redirect'});
+            push @pages, { title => $title, redirect => $redirect };
+        }
+    }
+
+    return @pages;
+}
+
 
 ################
 # Internal use #
@@ -1778,6 +2017,16 @@ sub _get_sitematrix {
         $self->{'sitematrix'} = \%map;
         return $self->{'sitematrix'};
     }
+}
+
+sub _get_ns_data {
+    my $self = shift;
+
+    my %ns_data = $self->{'ns_data'} ? %{$self->{'ns_data'}} : $self->get_namespace_names();
+    my %reverse = reverse %ns_data;
+    %ns_data = (%ns_data, %reverse);
+    $self->{'ns_data'} = \%ns_data; # Save for later use
+    return $self->{'ns_data'};
 }
 
 1;
