@@ -18,7 +18,7 @@ foreach my $plugin (__PACKAGE__->plugins) {
     $plugin->import();
 }
 
-our $VERSION = '3.1.5';
+our $VERSION = '3.1.6';
 
 =head1 NAME
 
@@ -26,26 +26,25 @@ MediaWiki::Bot - a MediaWiki bot framework written in Perl
 
 =head1 SYNOPSIS
 
-use MediaWiki::Bot;
+    use MediaWiki::Bot;
 
-my $bot = MediaWiki::Bot->new({
-    useragent   => 'MediaWiki::Bot 3.0.0 (User:Mike.lifeguard)',
-    assert      => 'bot',
-    protocol    => 'https',
-    host        => 'secure.wikimedia.org',
-    path        => 'wikipedia/meta/w',
-    login_data  => { username => "Mike's bot account", password => "password" },
-});
+    my $bot = MediaWiki::Bot->new({
+        useragent   => 'MediaWiki::Bot/3.1.6 (User:Mike.lifeguard)',
+        assert      => 'bot',
+        protocol    => 'https',
+        host        => 'secure.wikimedia.org',
+        path        => 'wikipedia/meta/w',
+        login_data  => { username => "Mike's bot account", password => "password" },
+    });
 
-my $revid = $bot->get_last("User:Mike.lifeguard/sandbox", "Mike.lifeguard");
-print "Reverting to $revid\n" if defined($revid);
-$bot->revert('User:Mike.lifeguard', $revid, 'rvv');
+    my $revid = $bot->get_last("User:Mike.lifeguard/sandbox", "Mike.lifeguard");
+    print "Reverting to $revid\n" if defined($revid);
+    $bot->revert('User:Mike.lifeguard', $revid, 'rvv');
 
 =head1 DESCRIPTION
 
-MediaWiki::Bot is a framework that can be used to write Wikipedia bots.
-
-Many of the methods use the MediaWiki API (L<http://en.wikipedia.org/w/api.php>).
+MediaWiki::Bot is a framework that can be used to write bots to interface with
+the MediaWiki API (L<http://en.wikipedia.org/w/api.php>).
 
 =head1 AUTHOR
 
@@ -53,7 +52,7 @@ The MediaWiki::Bot team (Alex Rowe, Jmax, Oleg Alexandrov, Dan Collins, Mike.lif
 
 =head1 COPYING
 
-Copyright (C) 2006, 2007 by the MediaWiki::Bot team
+Copyright (C) 2006, 2007, 2010 by the MediaWiki::Bot team
 
 This library is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -95,7 +94,7 @@ protocol allows you to specify 'http' or 'https' (default is 'http'). This is co
 host sets the domain name of the wiki to connect to.
 
 =item *
-path sets the path to api.php (with no trailing slash).
+path sets the path to api.php (with no leading or trailing slash).
 
 =item *
 login_data is a hashref of data to pass to login(). See that section for a description.
@@ -105,7 +104,7 @@ login_data is a hashref of data to pass to login(). See that section for a descr
 For example:
 
     my $bot = MediaWiki::Bot->new({
-        useragent   => 'MediaWiki::Bot 3.0.0 (User:Mike.lifeguard)',
+        useragent   => 'MediaWiki::Bot/3.1.6 (User:Mike.lifeguard)',
         assert      => 'bot',
         protocol    => 'https',
         host        => 'secure.wikimedia.org',
@@ -115,7 +114,7 @@ For example:
 
 For backward compatibility, you can specify up to three parameters:
 
-    my $bot = MediaWiki::Bot->new('MediaWiki::Bot 2.3.1 (User:Mike.lifeguard)', $assert, $operator);
+    my $bot = MediaWiki::Bot->new('MediaWiki::Bot/3.1.6 (User:Mike.lifeguard)', $assert, $operator);
 
 This deprecated form will never do auto-login or autoconfiguration.
 
@@ -156,7 +155,7 @@ sub new {
 
     # Set defaults
     unless ($agent) {
-        $agent  = "MediaWiki::Bot $VERSION";
+        $agent  = "MediaWiki::Bot/$VERSION";
         $agent .= " (User:$operator)" if $operator;
     }
 
@@ -167,9 +166,6 @@ sub new {
             stack_depth => 1
     );
     $self->{mech}->agent($agent);
-    $self->{protocol}                 = $protocol || 'http';
-    $self->{host}                     = $host || 'en.wikipedia.org';
-    $self->{path}                     = $path || 'w';
     $self->{debug}                    = 0;
     $self->{errstr}                   = '';
     $self->{assert}                   = $assert;
@@ -177,17 +173,12 @@ sub new {
     $self->{api}                      = MediaWiki::API->new();
     $self->{api}->{ua}->agent($agent);
 
-    # Set wiki if these are set
-    $self->set_wiki({
-        protocol => $self->{protocol},
-        host     => $self->{host},
-        path     => $self->{path},
+    # Set wiki (handles setting $self->{host} etc)
+     $self->set_wiki({
+            protocol => $protocol,
+            host     => $host,
+            path     => $path,
     });
-
-    # Log-in, and maybe autoconfigure
-    if ($login_data) {
-        $self->login($login_data) or carp "Couldn't log in with supplied settings";
-    }
 
     $self->{api}->{config}->{max_lag}         = $maxlag || 5;
     $self->{api}->{config}->{max_lag_delay}   = 1;
@@ -195,16 +186,24 @@ sub new {
     $self->{api}->{config}->{max_lag_retries} = -1;
     $self->{api}->{config}->{retry_delay}     = 30;
 
+    # Log-in, and maybe autoconfigure
+    if ($login_data) {
+        my $success = $self->login($login_data);
+        if ($success) {
+            return $self;
+        }
+        else {
+            carp "Couldn't log in with supplied settings" if $self->{'debug'};
+            return;
+        }
+    }
+
     return $self;
 }
 
-=head2 set_wiki($host[,$path[,$protocol]])
+=head2 set_wiki($options)
 
-Set what wiki to use. $host is the domain name; $path is the path before api.php (usually 'w'); $protocol is either 'http' or 'https'. For example:
-
-    $bot->set_wiki('de.wikipedia.org', 'w');
-
-will tell it to use http://de.wikipedia.org/w/index.php. The default settings are 'en.wikipedia.org' with a path of 'w'. You can also pass a hashref using keys with the same names as these parameters. To use the secure server:
+Set what wiki to use. Host is the domain name; path is the path before api.php (usually 'w'); protocol is either 'http' or 'https'. For example:
 
     $bot->set_wiki(
         protocol    => 'https',
@@ -215,6 +214,8 @@ will tell it to use http://de.wikipedia.org/w/index.php. The default settings ar
 For backward compatibility, you can specify up to two parameters in this deprecated form:
 
     $bot->set_wiki($host, $path);
+
+The default settings are 'en.wikipedia.org' with a path of 'w'.
 
 =cut
 
@@ -235,9 +236,9 @@ sub set_wiki {
     }
 
     # Set defaults
-    $protocol = 'http' unless $protocol;
-    $host = 'en.wikipedia.org' unless $host;
-    $path = 'w' unless $path;
+    $protocol = 'http' unless defined($protocol);
+    $host = 'en.wikipedia.org' unless defined($host);
+    $path = 'w' unless defined($path);
 
     # Clean up the parts we will build a URL with
     $protocol   =~ s,://$,,;
@@ -259,9 +260,9 @@ sub set_wiki {
     }
 
     # Invalidate wiki-specific cached data
-    if (($self->{'host'} ne $host)
-        or ($self->{'path'} ne $path)
-        or ($self->{'protocol'} ne $protocol)
+    if (   ((defined($self->{'host'})) and ($self->{'host'} ne $host))
+        or ((defined($self->{'path'})) and ($self->{'path'} ne $path))
+        or ((defined($self->{'protocol'})) and ($self->{'protocol'} ne $protocol))
     ) {
         delete $self->{'ns_data'} if $self->{'ns_data'};
     }
@@ -270,8 +271,10 @@ sub set_wiki {
     $self->{host} = $host;
     $self->{path} = $path;
 
-    $self->{api}->{config}->{api_url} = "$protocol://$host/$path/api.php";
-    print "Wiki set to $protocol://$host/$path/api.php\n" if $self->{debug};
+    $self->{api}->{config}->{api_url} = $path
+        ? "$protocol://$host/$path/api.php"
+        : "$protocol://$host/api.php"; # $path is '', so don't use http://domain.com//api.php
+    print "Wiki set to " . $self->{api}->{config}{api_url} . "\n" if $self->{debug};
 
     return 1;
 }
@@ -280,35 +283,58 @@ sub set_wiki {
 
 Logs the use $username in, optionally using $password. First, an attempt will be made to use cookies to log in. If this fails, an attempt will be made to use the password provided to log in, if any. If the login was successful, returns true; false otherwise.
 
-    $bot->login(
-        {
-            username => $username,
-            password => $password,
-        }
-    ) or die "Login failed";
+    $bot->login({
+        username => $username,
+        password => $password,
+    }) or die "Login failed";
 
 Once logged in, attempt to do some simple auto-configuration. At present, this consists of:
 
 =over 4
 
 =item *
+
 Warning if the account doesn't have the bot flag, and isn't a sysop account.
 
 =item *
+
 Setting the use of apihighlimits if the account has that userright.
 
 =item *
+
 Setting an appropriate default assert.
 
 =back
 
-You can skip this autoconfiguration by passing C<autoconfig =Z<>> 0>
+You can skip this autoconfiguration by passing C<autoconfig =E<gt> 0>
+
+=head3 Single User Login
+
+On WMF wikis, C<do_sul> specifies whether to log in on all projects. The default is false. But even when false, you still get a CentralAuth cookie for, and are thus logged in on, all languages of a given domain (*.wikipedia.org, for example). When set, a login is done on each WMF domain so you are logged in on all ~800 content wikis. Since C<*.wikimedia.org> is not possible, we explicitly include meta, commons, incubator, and wikispecies. When C<do_sul> is set, the return is the number of domains that login was successful for. This allows callers to do the following:
+
+    $bot->login({
+        username    => $username,
+        password    => $password,
+        do_sul      => 1,
+    }) or die "SUL failed";
 
 For backward compatibility, you can call this as
 
     $bot->login($username, $password);
 
-This deprecated form will never do autoconfiguration.
+This deprecated form will never do autoconfiguration or SUL login.
+
+If you need to supply basic auth credentials, pass a hashref of data as described by L<LWP::UserAgent>:
+
+    $bot->login({
+        username    => $username,
+        password    => $password,
+        basic_auth  => {    netloc  => "private.wiki.com:80",
+                            realm   => "Authentication Realm",
+                            uname   => "Basic auth username",
+                            pass    => "password",
+                        }
+    }) or die "Couldn't log in";
 
 =cut
 
@@ -317,30 +343,89 @@ sub login {
     my $username;
     my $password;
     my $autoconfig;
+    my $basic_auth;
+    my $do_sul;
     if (ref $_[0] eq 'HASH') {
-        $username = $_[0]->{'username'};
-        $password = $_[0]->{'password'};
+        $username   = $_[0]->{'username'};
+        $password   = $_[0]->{'password'};
         $autoconfig = defined($_[0]->{'autoconfig'}) ? $_[0]->{'autoconfig'} : 1;
+        $basic_auth = $_[0]->{'basic_auth'};
+        $do_sul     = $_[0]->{'do_sul'} || 0;
     }
     else {
-        $username = shift;
-        $password = shift;
+        $username   = shift;
+        $password   = shift;
         $autoconfig = 0;
+        $do_sul     = 0;
+    }
+    $self->{'username'} = $username;    # Remember who we are
+
+    # Handle basic auth first, if needed
+    if ($basic_auth) {
+        carp "Applying basic auth credentials" if $self->{debug};
+        $self->{api}->{ua}->credentials(
+            $basic_auth->{'netloc'},
+            $basic_auth->{'realm'},
+            $basic_auth->{'uname'},
+            $basic_auth->{'pass'}
+        );
     }
 
-    # This seems to not do what we want. Cookies are loaded, but a
-    # subsequent userinfo query shows the bot is not logged in.
-    my $cookies  = ".mediawiki-bot-$username-cookies";
-    $self->{mech}->{cookie_jar}->load($cookies);
-    $self->{mech}->{cookie_jar}->{ignore_discard}=1;
-    $self->{api}->{ua}->{cookie_jar}->load($cookies);
+    if ($do_sul) {
+        my $debug = $self->{'debug'};   # Remember this for later
+        $self->{'debug'} = 0;           # Turn off debugging for these internal calls
+        my @logins;                     # Keep track of our successes
+        my @WMF_projects = qw(
+            en.wikipedia.org
+            en.wiktionary.org
+            en.wikibooks.org
+            en.wikinews.org
+            en.wikiquote.org
+            en.wikisource.org
+            en.wikiversity.org
+            meta.wikimedia.org
+            commons.wikimedia.org
+            species.wikimedia.org
+            incubator.wikimedia.org
+        );
 
-    $self->{username} = $username; # Remember who we are
-    my $logged_in = $self->_is_loggedin();
-    if ($logged_in) {
-        $self->_do_autoconfig() if $autoconfig;
-        carp "Logged in successfully with cookies" if $self->{debug};
-        return 1; # If we're already logged in, nothing more is needed
+        SUL: foreach my $project (@WMF_projects) {
+            print "Logging in on $project..." if $debug;
+            $self->set_wiki({
+                host    => $project,
+            });
+            my $success = $self->login({
+                username    => $username,
+                password    => $password,
+                do_sul      => 0,
+                autoconfig  => 0,
+            });
+            print ($success ? " OK\n" : " FAILED\n") if $debug;
+            push(@logins, $success);
+        }
+
+        my $sum = 0;
+        $sum += $_ for @logins;
+        my $total = scalar @WMF_projects;
+        print "$sum/$total logins succeeded\n" if $debug;
+        $self->{'debug'} = $debug; # Reset debug to it's old value
+
+        return $sum;
+    }
+
+    my $cookies = ".mediawiki-bot-$username-cookies";
+    if (-r $cookies) {
+        $self->{mech}->{cookie_jar}->load($cookies);
+        $self->{mech}->{cookie_jar}->{ignore_discard} = 1;
+        $self->{api}->{ua}->{cookie_jar}->load($cookies);
+        $self->{api}->{ua}->{cookie_jar}->{ignore_discard} = 1;
+
+        my $logged_in = $self->_is_loggedin();
+        if ($logged_in) {
+            $self->_do_autoconfig() if $autoconfig;
+            carp "Logged in successfully with cookies" if $self->{debug};
+            return 1; # If we're already logged in, nothing more is needed
+        }
     }
 
     unless ($password) {
@@ -348,19 +433,40 @@ sub login {
         return 0;
     }
 
-    my $res = $self->{api}->login({
-        lgname     => $username,
-        lgpassword => $password
+    my $res = $self->{api}->api({
+        action      => 'login',
+        lgname      => $username,
+        lgpassword  => $password,
     }) or return $self->_handle_api_error();
+    $self->{api}->{ua}->{cookie_jar}->extract_cookies($self->{api}->{response});
+    $self->{api}->{ua}->{cookie_jar}->save($cookies) if (-w($cookies) or -w('.'));
 
-    $self->{mech}->{cookie_jar}->extract_cookies($self->{api}->{response});
-    $self->{mech}->{cookie_jar}->save($cookies);
+    if ($res->{'login'}->{'result'} eq 'NeedToken') {
+        my $token = $res->{'login'}->{'token'};
+        $res = $self->{api}->api({
+            action      => 'login',
+            lgname      => $username,
+            lgpassword  => $password,
+            lgtoken     => $token,
+        }) or return $self->_handle_api_error();
 
-#use Data::Dumper; print Dumper $self->{mech}->{cookie_jar};
-    $logged_in = $self->_is_loggedin();
-    $self->_do_autoconfig() if ($autoconfig and $logged_in);
-    carp "Logged in successfully with password" if ($logged_in and $self->{debug});
-    return $logged_in;
+        $self->{api}->{ua}->{cookie_jar}->extract_cookies($self->{api}->{response});
+        $self->{api}->{ua}->{cookie_jar}->save($cookies) if (-w($cookies) or -w('.'));
+    }
+
+    if ($res->{'login'}->{'result'} eq 'Success') {
+        if ($res->{'login'}->{'lgusername'} eq $self->{'username'}) {
+            $self->_do_autoconfig() if $autoconfig;
+            carp "Logged in successfully with password" if $self->{debug};
+        }
+    }
+
+    return (
+        (defined($res->{'login'}->{'lgusername'})) and
+        (defined($res->{'login'}->{'result'})) and
+        ($res->{'login'}->{'lgusername'} eq $self->{'username'}) and
+        ($res->{'login'}->{'result'} eq 'Success')
+    );
 }
 
 =head2 set_highlimits($flag)
@@ -516,6 +622,15 @@ movetalk specifies whether to attempt to the talk page.
 
 =item *
 noredirect specifies whether to suppress creation of a redirect.
+
+=item *
+movesubpages specifies whether to move subpages, if applicable.
+
+=item *
+watch and unwatch add or remove the page and the redirect from your watchlist
+
+=item *
+ignorewarnings ignores warnings.
 
 =back
 
@@ -1240,7 +1355,7 @@ sub purge_page {
 
 }
 
-=head2 get_namespace_names
+=head2 get_namespace_names()
 
 get_namespace_names returns a hash linking the namespace id, such as 1, to its named equivalent, such as "Talk".
 
