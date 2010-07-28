@@ -3,32 +3,35 @@
 
 #########################
 
-# change 'tests => 1' to 'tests => last_test_to_print';
-
 use strict;
 use warnings;
 use Test::More tests => 2;
 
 #########################
 
-# Insert your test code below, the Test::More module is use()ed here so read
-# its man page ( perldoc Test::More ) for help writing this test script.
-
 use MediaWiki::Bot;
 
-my $bot = MediaWiki::Bot->new();
-#$bot->set_wiki( "wiki.xyrael.net","w" );
+my $username = $ENV{'PWPUsername'};
+my $password = $ENV{'PWPPassword'};
+my $login_data;
+if (defined($username) and defined($password)) {
+    $login_data = { username => $username, password => $password };
+}
+
+my $bot = MediaWiki::Bot->new({
+    agent   => 'MediaWiki::Bot tests (02_edit.t)',
+    login_data => $login_data,
+});
 
 my $rand = rand();
-my $status = $bot->edit('User:ST47/test', $rand, 'MediaWiki::Bot tests');
-#eval { use Data::Dumper; print STDERR Dumper($status); };
-#if ($@) {print STDERR "#Couldn't load Data::Dumper\n"}
+my $status = $bot->edit('User:ST47/test', $rand, 'MediaWiki::Bot tests (02_edit.t)');
+
 SKIP: {
-    if ($status == 3 and $bot->{error}->{code} == 3) {
+    if ((defined($bot->{'error'}->{'code'})) and ($bot->{'error'}->{'code'} == 3)) {
         skip 'You are blocked, cannot use editing tests', 1;
     }
-    #ok( $status->isa("HTTP::Response") );
 
+    sleep(1);
     my $is = $bot->get_text('User:ST47/test');
     is($is, $rand, 'Did whole-page editing successfully');
 
@@ -37,13 +40,14 @@ SKIP: {
         page    => 'User:ST47/test',
         text    => $rand2,
         section => 'new',
-        summary => 'MediaWiki::Bot tests',
+        summary => 'MediaWiki::Bot tests (02_edit.t)',
     });
+    sleep(1);
     $is = $bot->get_text('User:ST47/test');
     my $ought = <<"END";
 $rand
 
-== MediaWiki::Bot tests ==
+== MediaWiki::Bot tests (02_edit.t) ==
 
 $rand2
 END

@@ -5,23 +5,23 @@
 
 use strict;
 use warnings;
-use Test::More tests => 2;
+use Test::More tests => 3;
 
 #########################
 
 use MediaWiki::Bot;
 
 my $bot = MediaWiki::Bot->new({
-    agent   => 'MediaWiki::Bot tests (22_get_id.t)',
+    agent   => 'MediaWiki::Bot tests (30_search.t)',
 });
 
 if(defined($ENV{'PWPMakeTestSetWikiHost'})) {
     $bot->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
 }
 
-my $result = $bot->get_id('Main Page');
-is($result, 15580374, 'Main Page found');
+my @pages = $bot->search('Main Page');
+isa_ok(\@pages, 'ARRAY', 'Right return type');
+is($pages[0], 'Main Page', 'Found [[Main Page]]');
 
-$result = $bot->get_text('egaP niaM');
-is($result, undef, 'No page found');
-
+@pages = $bot->search('62c77d65adf258464e0f0820696b871251c21eb4');
+is(scalar @pages, 0, 'No results found for a nonsensical search');

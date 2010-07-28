@@ -3,30 +3,27 @@
 
 #########################
 
-# change 'tests => 1' to 'tests => last_test_to_print';
-
 use strict;
 use warnings;
 use Test::More tests => 1;
 
 #########################
 
-# Insert your test code below, the Test::More module is use()ed here so read
-# its man page ( perldoc Test::More ) for help writing this test script.
-
 use MediaWiki::Bot;
 
-my $bot = MediaWiki::Bot->new('MediaWiki::Bot tests', 'admin');
+my $bot = MediaWiki::Bot->new({
+    agent   => 'MediaWiki::Bot tests (19_assert_edit.t)',
+});
 
 if(defined($ENV{'PWPMakeTestSetWikiHost'})) {
     $bot->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
 }
 
-SKIP: {
-#   skip("Skipping edit test for now",2);
+my $rand = rand();
+my $status = $bot->edit({
+    page    => 'User:ST47/test',
+    text    => $rand,
+    assert  => 'false'
+});
+is($status->{'edit'}->{'result'}, 'Failure', 'Intentionally bad assertion');
 
-    my $rand = rand();
-    print STDERR "\rYou should receive another error message here regarding a failed assertion.\n";
-    my $status = $bot->edit('User:ST47/test', $rand, 'false');
-    is($status->{'edit'}->{'result'}, 'Failure', 'Intentionally bad assertion');
-}

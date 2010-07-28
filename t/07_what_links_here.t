@@ -3,19 +3,17 @@
 
 #########################
 
-# change 'tests => 1' to 'tests => last_test_to_print';
-
 use strict;
 use warnings;
 use Test::More tests => 7;
 
 #########################
 
-# Insert your test code below, the Test::More module is use()ed here so read
-# its man page ( perldoc Test::More ) for help writing this test script.
 use MediaWiki::Bot;
 
-my $bot = MediaWiki::Bot->new('make test');
+my $bot = MediaWiki::Bot->new({
+    agent   => 'MediaWiki::Bot tests (07_what_links_here.t)',
+});
 
 if(defined($ENV{'PWPMakeTestSetWikiHost'})) {
     $bot->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
@@ -30,6 +28,11 @@ like(   $pages[0]->{'title'},           qr/\w+/,            'The title looks val
 ok(     defined $pages[0]->{'redirect'},                    'Redirect status is defined');
 ok(     defined($pages[0]->{'redirect'}),                   'We got a redirect when we asked for it');
 
-@pages = $bot->what_links_here('Main Page', 'nonredirects', undef, {max=>1});
-
-isnt(     defined($pages[0]->{'redirect'}),                   'We got a normal link when we asked for no redirects');
+$bot->what_links_here('Project:Sandbox', 'nonredirects', 0, {max => 1, hook => \&mysub});
+my $is_redir;
+sub mysub {
+    my ($res) = @_;
+    my $hash = $res->[0];
+    $is_redir = $hash->{'redirect'};
+}
+isnt(     $is_redir,                                        'We got a normal link when we asked for no redirects');

@@ -3,27 +3,22 @@
 
 #########################
 
-# change 'tests => 1' to 'tests => last_test_to_print';
-
 use strict;
 use warnings;
 use Test::More tests => 1;
 
 #########################
 
-# Insert your test code below, the Test::More module is use()ed here so read
-# its man page ( perldoc Test::More ) for help writing this test script.
-
 use MediaWiki::Bot;
 
-my $bot = MediaWiki::Bot->new();
+my $bot = MediaWiki::Bot->new({
+    agent   => 'MediaWiki::Bot tests (20_get_allusers.t)',
+});
 
 if(defined($ENV{'PWPMakeTestSetWikiHost'})) {
     $bot->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
 }
 
-SKIP:{
-    skip('Mediawiki bug, limit is broken, off by one error', 1);
-    my @array=$bot->get_allusers(10);
-    is(scalar(@array), 10, 'Got 10 users');
-}
+my @array = $bot->get_allusers(10);
+is(scalar(@array), 10, 'Got 10 users');
+
