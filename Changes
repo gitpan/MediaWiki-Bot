@@ -3,7 +3,7 @@ Revision history for MediaWiki::Bot
 
 Vers. Rel.Mgr. SVN  Date
 ------------------------
-3.1.6 Mike.lif HEAD Unreleased
+3.2.0 Mike.lif HEAD Unreleased
     Changes made since 3.1.0
         * BREAKING CHANGE: The constructor now returns false when auto-login fails
         * Some cached data is now invalidated when set_wiki() is called
@@ -25,6 +25,14 @@ Vers. Rel.Mgr. SVN  Date
         * links_to_image() was renamed to image_usage() and now uses the API and has new features. The old name is retained for backward compatibility.
         * login() can now do SUL; see POD for details
         * test_image_exists() sometimes returned undef when it shouldn't have; this was fixed.
+        * The test suite was made more robust
+        * SUL on secure.wikimedia.org is useless, and is now disabled
+        * test_image_exists() now accepts an arrayref of images
+        * Two levels of debug output are now available. 1 is failure notification; 2 is internal operations.
+        * top_edits() and contributions() offer two ways to get user contributions. See Pod for details.
+        * Support for LDAP login was added thanks to a patch by philippe.cade
+        * Protocol, host, and path are now retained when a call to set_wiki() doesn't specify one of them.
+
 3.1.0 Mike.lif r302 05 June 2010
     Changes made since 3.0.0
         * BREAKING CHANGE: update_rc() now accepts a hashref of options, and the hash structure returned is changed. See POD for details.

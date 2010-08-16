@@ -1,6 +1,9 @@
 NAME
     MediaWiki::Bot - a MediaWiki bot framework written in Perl
 
+VERSION
+    version 3.2.0
+
 SYNOPSIS
         use MediaWiki::Bot;
 
@@ -51,7 +54,8 @@ METHODS
     *   login_data is a hashref of credentials to pass to login(). See that
         section for a description.
 
-    *   debug is whether to provide debug output.
+    *   debug is whether to provide debug output. 1 provides only error
+        messages; 2 provides further detail on internal operations.
 
     For example:
 
@@ -86,7 +90,9 @@ METHODS
 
         $bot->set_wiki($host, $path);
 
-    The default settings are 'en.wikipedia.org' with a path of 'w'.
+    If you don't set any parameter, it's previous value is used. If it has
+    never been set, the default settings are 'http', 'en.wikipedia.org' and
+    'w'.
 
   login($login_hashref)
     Logs the use $username in, optionally using $password. First, an attempt
@@ -451,6 +457,19 @@ METHODS
   test_image_exists($page)
     Checks if an image exists at $page. 0 means no, 1 means yes, local, 2
     means on commons, 3 means doesn't exist but there is text on the page.
+    If you pass in an arrayref of images, you'll get out an arrayref of
+    results.
+
+        my $exists = $bot->test_image_exists('File:Albert Einstein Head.jpg');
+        if ($exists == 0) {
+            print "Doesn't exist\n";
+        }
+        elsif ($exists == 1) {
+            print "Exists locally\n";
+        }
+        elsif ($exists == 2) {
+            print "Exists on Commons\n";
+        }
 
   get_pages_in_namespace($namespace_id, $page_limit)
     Returns an array containing the names of all pages in the specified
@@ -651,28 +670,65 @@ METHODS
     the User: prefix), $subject and $body are required. If $user is an
     arrayref, this will send the same email (subject and body) to all users.
 
-AUTHOR
-    The MediaWiki::Bot team (Alex Rowe, Jmax, Oleg Alexandrov, Dan Collins,
-    Mike.lifeguard) and others.
+  top_edits($user[,$options])
+    Returns an array of the page titles where the user is the latest editor.
 
-COPYING
-    Copyright (C) 2006, 2007, 2010 by the MediaWiki::Bot team
+        my @pages = $bot->top_edits("Mike.lifeguard", {max => 5});
+        foreach my $page (@pages) {
+            $bot->rollback($page, "Mike.lifeguard");
+        }
 
-    This library is free software; you can redistribute it and/or modify it
-    under the terms of the GNU General Public License as published by the
-    Free Software Foundation; either version 3 of the License, or (at your
-    option) any later version.
+    Note that accessing the data with a callback happens before filtering
+    the top edits is done. For that reason, you should use "contributions()"
+    if you need to use a callback. If you use a callback with "top_edits()",
+    you will not get top edits returned. It is safe to use a callback if you
+    *check* that it is a top edit:
 
-    This library is distributed in the hope that it will be useful, but
-    WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
-    Public License for more details.
+        $bot->top_edits("Mike.lifeguard", { hook => \&rv });
+        sub rv {
+            my $data = shift;
+            foreach my $page (@$data) {
+                if (exists($page->{'top'})) {
+                    $bot->rollback($page->{'title'}, "Mike.lifeguard");
+                }
+            }
+        }
 
-    You should have received a copy of the GNU General Public License along
-    with this program. If not, see <http://www.gnu.org/licenses/>.
+  contributions($user, $ns, $options)
+    Returns an array of hashrefs of data for the user's contributions. $ns
+    can be an arrayref of namespace numbers.
 
 ERROR HANDLING
     All functions will return undef in any handled error situation. Further
-    error data is stored in $bot->{error}->{code} and
-    $bot->{error}->{details}.
+    error data is stored in $bot->{'error'}->{'code'} and
+    $bot->{'error'}->{'details'}.
+
+AUTHORS
+    *   Dan Collins <en.wp.st47@gmail.com>
+
+    *   Mike.lifeguard <mike.lifeguard@gmail.com>
+
+    *   Alex Rowe <alex.d.rowe@gmail.com>
+
+    *   Oleg Alexandrov <oleg.alexandrov@gmail.com>
+
+    *   jmax.code <jmax.code@gmail.com>
+
+    *   Stefan Petrea <stefan.petrea@gmail.com>
+
+    *   kc2aei <kc2aei@gmail.com>
+
+    *   bosborne@alum.mit.edu
+
+    *   Brian Obio <brianobio@gmail.com>
+
+    *   patch and bug report contributors
+
+COPYRIGHT AND LICENSE
+    This software is Copyright (c) 2010 by the MediaWiki::Bot team
+    <perlwikibot@googlegroups.com>.
+
+    This is free software, licensed under:
+
+      The GNU General Public License, Version 3, June 2007
 

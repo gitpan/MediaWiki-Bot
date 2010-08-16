@@ -15,7 +15,7 @@ find(
     $found =~ s{^lib/}{};
     $found =~ s{[/\\]}{::}g;
     $found =~ s/\.pm$//;
-    return if $found =~ /^PWP|perlwikipedia$/;
+    # nothing to skip
     push @modules, $found;
   },
   'lib',

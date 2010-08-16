@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 
-
+BEGIN { require 5.008; }
 
 use ExtUtils::MakeMaker 6.31;
 
@@ -10,7 +10,7 @@ use ExtUtils::MakeMaker 6.31;
 
 my %WriteMakefileArgs = (
   'ABSTRACT' => 'a MediaWiki bot framework written in Perl',
-  'AUTHOR' => 'Dan Collins <en.wp.st47@gmail.com>, Mike.lifeguard <mike.lifeguard@gmail.com>, Alex Rowe <alex.d.rowe@gmail.com>, Oleg Alexandrov <oleg.alexandrov@gmail.com>, jmax.code <jmax.code@gmail.com>, Brian Obio <brianobio@gmail.com>, Stefan Petrea <stefan.petrea@gmail.com>, kc2aei <kc2aei@gmail.com>',
+  'AUTHOR' => 'Dan Collins <en.wp.st47@gmail.com>, Mike.lifeguard <mike.lifeguard@gmail.com>, Alex Rowe <alex.d.rowe@gmail.com>, Oleg Alexandrov <oleg.alexandrov@gmail.com>, jmax.code <jmax.code@gmail.com>, Stefan Petrea <stefan.petrea@gmail.com>, kc2aei <kc2aei@gmail.com>, bosborne@alum.mit.edu, Brian Obio <brianobio@gmail.com>, patch and bug report contributors',
   'BUILD_REQUIRES' => {
     'English' => '0',
     'File::Find' => '0',
@@ -37,7 +37,7 @@ my %WriteMakefileArgs = (
     'WWW::Mechanize' => '0',
     'XML::Simple' => '0'
   },
-  'VERSION' => '3.1.6',
+  'VERSION' => '3.2.0',
   'test' => {
     'TESTS' => 't/*.t'
   }
