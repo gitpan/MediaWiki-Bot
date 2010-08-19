@@ -3,15 +3,16 @@ package MediaWiki::Bot;
 
 use strict;
 use warnings;
-use WWW::Mechanize;
-use HTML::Entities;
-use URI::Escape;
-use XML::Simple;
+
+use WWW::Mechanize 1.30;
+use HTML::Entities 3.28;
+use URI::Escape 1.35;
+use XML::Simple 2.16;
 use Carp;
 use URI::Escape qw(uri_escape_utf8);
-use Digest::MD5 qw(md5_hex);
+use Digest::MD5 2.39 qw(md5_hex);
 use Encode qw(encode_utf8);
-use MediaWiki::API;
+use MediaWiki::API 0.20;
 
 use Module::Pluggable search_path => [qw(MediaWiki::Bot::Plugin)], 'require' => 1;
 foreach my $plugin (__PACKAGE__->plugins) {
@@ -20,7 +21,7 @@ foreach my $plugin (__PACKAGE__->plugins) {
     $plugin->import();
 }
 
-our $VERSION = '3.2.0';
+our $VERSION = '3.2.1';
 
 
 sub new {
@@ -1927,14 +1928,13 @@ MediaWiki::Bot - a MediaWiki bot framework written in Perl
 
 =head1 VERSION
 
-version 3.2.0
+version 3.2.1
 
 =head1 SYNOPSIS
 
     use MediaWiki::Bot;
 
     my $bot = MediaWiki::Bot->new({
-        useragent   => 'MediaWiki::Bot/3.1.6 (User:Mike.lifeguard)',
         assert      => 'bot',
         protocol    => 'https',
         host        => 'secure.wikimedia.org',
@@ -1991,7 +1991,6 @@ debug is whether to provide debug output. 1 provides only error messages; 2 prov
 For example:
 
     my $bot = MediaWiki::Bot->new({
-        useragent   => 'MediaWiki::Bot/3.1.6 (User:Mike.lifeguard)',
         assert      => 'bot',
         protocol    => 'https',
         host        => 'secure.wikimedia.org',

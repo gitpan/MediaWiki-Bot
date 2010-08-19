@@ -53,7 +53,6 @@ t/42_get_users.t
 t/43_expandtemplates.t
 t/97_pod.t
 t/98_pod_coverage.t
-t/99_pod_kwalitee.t
 t/author-critic.t
 t/release-distmeta.t
 t/release-eol.t

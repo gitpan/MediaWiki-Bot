@@ -15,7 +15,6 @@ my %WriteMakefileArgs = (
     'English' => '0',
     'File::Find' => '0',
     'File::Temp' => '0',
-    'Test::Kwalitee' => '0',
     'Test::More' => '0',
     'utf8' => '0'
   },
@@ -28,16 +27,17 @@ my %WriteMakefileArgs = (
   'NAME' => 'MediaWiki::Bot',
   'PREREQ_PM' => {
     'Carp' => '0',
-    'Digest::MD5' => '0',
+    'Crypt::SSLeay' => '0.57',
+    'Digest::MD5' => '2.39',
     'Encode' => '0',
-    'HTML::Entities' => '0',
-    'MediaWiki::API' => '0',
+    'HTML::Entities' => '3.28',
+    'MediaWiki::API' => '0.20',
     'Module::Pluggable' => '0',
-    'URI::Escape' => '0',
-    'WWW::Mechanize' => '0',
-    'XML::Simple' => '0'
+    'URI::Escape' => '1.35',
+    'WWW::Mechanize' => '1.30',
+    'XML::Simple' => '2.16'
   },
-  'VERSION' => '3.2.0',
+  'VERSION' => '3.2.1',
   'test' => {
     'TESTS' => 't/*.t'
   }
