@@ -38,4 +38,4 @@ requires:
   WWW::Mechanize: 1.30
   XML::Simple: 2.16
   perl: 5.008
-version: 3.2.1
+version: 3.2.2
