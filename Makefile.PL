@@ -34,10 +34,9 @@ my %WriteMakefileArgs = (
     'MediaWiki::API' => '0.20',
     'Module::Pluggable' => '0',
     'URI::Escape' => '1.35',
-    'WWW::Mechanize' => '1.30',
     'XML::Simple' => '2.16'
   },
-  'VERSION' => '3.2.2',
+  'VERSION' => '3.2.3',
   'test' => {
     'TESTS' => 't/*.t'
   }
