@@ -20,7 +20,7 @@ foreach my $plugin (__PACKAGE__->plugins) {
     $plugin->import();
 }
 
-our $VERSION = '3.2.3';
+our $VERSION = '3.2.4';
 
 
 sub new {
@@ -364,7 +364,7 @@ sub edit {
     my ($edittoken, $lastedit, $tokentime) = $self->_get_edittoken($page);
     return $self->_handle_api_error() unless $edittoken;
 
-    my $res = $self->{'api'}->api({
+    my $hash = {
         action         => 'edit',
         title          => $page,
         token          => $edittoken,
@@ -378,7 +378,10 @@ sub edit {
         assert         => $assert,
         minor          => $is_minor,
         section        => $section,
-    });
+    };
+    delete $hash->{'section'} unless defined($section);
+
+    my $res = $self->{'api'}->api($hash);
     return $self->_handle_api_error() unless $res;
     if ($res->{'edit'}->{'result'} && $res->{'edit'}->{'result'} eq 'Failure') {
         if ($self->{'operator'}) {
@@ -619,7 +622,12 @@ sub revert {
     my $summary  = shift || "Reverting to old revision $revid";
 
     my $text = $self->get_text($pagename, $revid);
-    my $res = $self->edit($pagename, $text, $summary);
+    my $res = $self->edit({
+        page    => $pagename,
+        text    => $text,
+        summary => $summary,
+    });
+
     return $res;
 }
 
@@ -1925,7 +1933,7 @@ MediaWiki::Bot - a MediaWiki bot framework written in Perl
 
 =head1 VERSION
 
-version 3.2.3
+version 3.2.4
 
 =head1 SYNOPSIS
 

@@ -37,4 +37,4 @@ requires:
   URI::Escape: 1.35
   XML::Simple: 2.16
   perl: 5.008
-version: 3.2.3
+version: 3.2.4
