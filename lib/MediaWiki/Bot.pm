@@ -20,7 +20,7 @@ foreach my $plugin (__PACKAGE__->plugins) {
     $plugin->import();
 }
 
-our $VERSION = '3.2.4';
+our $VERSION = '3.2.5';
 
 
 sub new {
@@ -445,8 +445,8 @@ sub move {
 sub get_history {
     my $self      = shift;
     my $pagename  = shift;
-    my $limit     = shift || 5;
-    my $rvstartid = shift || '';
+    my $limit     = shift || 'max';
+    my $rvstartid = shift;
     my $direction = shift;
 
     my @return;
@@ -682,7 +682,7 @@ sub get_last {
 
 sub update_rc {
     my $self    = shift;
-    my $limit   = shift;
+    my $limit   = shift || 'max';
     my $options = shift;
 
     my $hash = {
@@ -711,6 +711,28 @@ sub update_rc {
 }
 
 
+sub recentchanges {
+    my $self    = shift;
+    my $ns      = shift || 0;
+    my $limit   = defined($_[0]) ? shift : 50;
+    my $options = shift;
+    $ns = join('|', @$ns) if ref $ns eq 'ARRAY';
+
+    my $hash = {
+        action      => 'query',
+        list        => 'recentchanges',
+        rcnamespace => $ns,
+        rclimit     => $limit,
+    };
+    $options->{'max'} = 1 unless $options->{'max'};
+
+    my $res = $self->{api}->list($hash, $options);
+    return $self->_handle_api_error() unless $res;
+    return 1 unless ref $res;    # Not a ref when using callback
+    return @$res;
+}
+
+
 sub what_links_here {
     my $self    = shift;
     my $page    = shift;
@@ -729,6 +751,7 @@ sub what_links_here {
         list        => 'backlinks',
         bltitle     => $page,
         blnamespace => $ns,
+        bllimit     => 'max',
     };
     $hash->{'blfilterredir'} = $filter if $filter;
     $options->{'max'} = 1 unless $options->{'max'};
@@ -765,6 +788,7 @@ sub list_transclusions {
         list        => 'embeddedin',
         eititle     => $page,
         einamespace => $ns,
+        eilimit     => 'max',
     };
     $hash->{'eifilterredir'} = $filter if $filter;
     $options->{'max'} = 1 unless $options->{'max'};
@@ -807,6 +831,7 @@ sub get_pages_in_category {
         action  => 'query',
         list    => 'categorymembers',
         cmtitle => $category,
+        cmlimit => 'max',
     };
     $options->{'max'} = 1 unless defined($options->{'max'});
     delete($options->{'max'}) if $options->{'max'} == 0;
@@ -880,6 +905,7 @@ sub linksearch {
         euquery     => $link,
         eunamespace => $ns,
         euprotocol  => $prot,
+        eulimit     => 'max',
     };
     $options->{'max'} = 1 unless $options->{'max'};
 
@@ -970,6 +996,7 @@ sub image_usage {
         list            => 'imageusage',
         iutitle         => $image,
         iunamespace     => $ns,
+        iulimit         => 'max',
     };
     if (defined($filter) and $filter =~ m/(all|redirects|nonredirects)/) {
         $hash->{'iufilterredir'} = $1;
@@ -1090,9 +1117,8 @@ sub test_image_exists {
 sub get_pages_in_namespace {
     my $self      = shift;
     my $namespace = shift;
-    my $limit     = shift || 500;
+    my $limit     = shift || 'max';
     my $options   = shift;
-    $limit = 5000 if $self->{'highlimits'};
 
     my $hash = {
         action      => 'query',
@@ -1172,7 +1198,7 @@ sub recent_edit_to_page {
 sub get_users {
     my $self      = shift;
     my $pagename  = shift;
-    my $limit     = shift || 5;
+    my $limit     = shift || 'max';
     my $rvstartid = shift;
     my $direction = shift;
 
@@ -1189,7 +1215,7 @@ sub get_users {
         prop    => 'revisions',
         titles  => $pagename,
         rvprop  => 'ids|timestamp|user|comment',
-        rvlimit => $limit
+        rvlimit => $limit,
     };
     $hash->{rvstartid} = $rvstartid if ($rvstartid);
     $hash->{rvdir}     = $direction if ($direction);
@@ -1267,10 +1293,8 @@ sub expandtemplates {
 
 sub get_allusers {
     my $self   = shift;
-    my $limit  = shift;
-    my @return = ();
-
-    $limit = 500 unless $limit;
+    my $limit  = shift || 'max';
+    my @return;
 
     my $res = $self->{api}->api({
             action  => 'query',
@@ -1396,6 +1420,7 @@ sub prefixindex {
         action   => 'query',
         list     => 'allpages',
         apprefix => $prefix,
+        aplimit  => 'max',
     };
     $hash->{'apnamespace'}   = $ns     if $ns;
     $hash->{'apfilterredir'} = $filter if $filter;
@@ -1431,6 +1456,7 @@ sub search {
         list     => 'search',
         srsearch => $term,
         srwhat   => 'text',
+        srlimit  => 'max',
 
         #srinfo      => 'totalhits',
         srprop      => 'size',
@@ -1465,8 +1491,9 @@ sub get_log {
     $user =~ s/^$user_ns_name://;
 
     my $hash = {
-        action => 'query',
-        list   => 'logevents',
+        action  => 'query',
+        list    => 'logevents',
+        lelimit => 'max',
     };
     $hash->{'letype'}  = $log_type if $log_type;
     $hash->{'leuser'}  = $user     if $user;
@@ -1699,6 +1726,7 @@ sub top_edits {
         list    => 'usercontribs',
         ucuser  => $user,
         ucprop  => 'title|flags',
+        uclimit => 'max',
     }, $options);
     return _handle_api_error() unless $res;
     return 1 if (!ref $res);    # Not a ref when using callback
@@ -1731,6 +1759,7 @@ sub contributions {
         ucuser      => $user,
         ucnamespace => $ns,
         ucprop      => 'ids|title|timestamp|comment|patrolled|flags',
+        uclimit     => 'max',
     }, $opts);
     return _handle_api_error() unless $res;
     return 1 if (!ref $res);    # Not a ref when using callback
@@ -1933,7 +1962,7 @@ MediaWiki::Bot - a MediaWiki bot framework written in Perl
 
 =head1 VERSION
 
-version 3.2.4
+version 3.2.5
 
 =head1 SYNOPSIS
 
@@ -2143,7 +2172,7 @@ ignorewarnings ignores warnings.
 
 =head2 get_history($pagename[,$limit])
 
-Returns an array containing the history of the specified page, with $limit number of revisions. The array structure contains 'revid', 'user', 'comment', 'timestamp_date', and 'timestamp_time'.
+Returns an array containing the history of the specified page, with $limit number of revisions (default is as many as possible). The array structure contains 'revid', 'user', 'comment', 'timestamp_date', and 'timestamp_time'.
 
 =head2 get_text($pagename,[$revid,$section_number])
 
@@ -2194,7 +2223,13 @@ Returns the revid of the last revision to $page not made by $user. undef is retu
 
 =head2 update_rc($limit[,$options_hashref])
 
-Returns an array containing the Recent Changes to the wiki Main namespace. The array structure contains 'title', 'revid', 'old_revid', and 'timestamp'. The $options_hashref is the same as described in the section on linksearch().
+B<Note:> C<update_rc()> is deprecated in favour of C<recentchanges()>, which
+returns all available data, including rcid.
+
+Returns an array containing the Recent Changes to the wiki Main
+namespace. The array structure contains 'title', 'revid', 'old_revid',
+and 'timestamp'. The $options_hashref is the same as described in the
+section on linksearch().
 
     my @rc = $bot->update_rc(5);
     foreach my $hashref (@rc) {
@@ -2205,6 +2240,51 @@ Returns an array containing the Recent Changes to the wiki Main namespace. The a
     # Or, use a callback for incremental processing:
     my $options = { hook => \&mysub, };
     $bot->update_rc($options);
+    sub mysub {
+        my ($res) = @_;
+        foreach my $hashref (@$res) {
+            my $page = $hashref->{'title'};
+            print "$page\n";
+        }
+    }
+
+=head2 recentchanges($ns, $limit, $options_hashref)
+
+Returns an array of hashrefs containing recentchanges data. That hashref
+might contain the following keys:
+
+=over 4
+
+=item ns - the namespace number
+
+=item revid
+
+=item old_revid
+
+=item timestamp
+
+=item rcid - can be used with C<patrol()>
+
+=item pageid
+
+=item type - one of edit, new, log, and maybe more
+
+=item title
+
+=back
+
+By default, the main namespace is used, and limit is set to 50. Pass an
+arrayref of namespace numbers to get results from several namespaces.
+
+The $options_hashref is the same as described in the section on linksearch().
+
+    my @rc = $bot->update_rc(4, 10);
+    foreach my $hashref (@rc) {
+        print $hashref->{'title'} . "\n";
+    }
+
+    # Or, use a callback for incremental processing:
+    $bot->update_rc(0, 500, { hook => \&mysub });
     sub mysub {
         my ($res) = @_;
         foreach my $hashref (@$res) {

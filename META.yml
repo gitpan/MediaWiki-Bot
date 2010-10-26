@@ -12,15 +12,14 @@ author:
   - 'Brian Obio <brianobio@gmail.com>'
   - 'patch and bug report contributors'
 build_requires:
-  English: 0
   File::Find: 0
   File::Temp: 0
-  Test::More: 0
+  Test::More: 0.88
   utf8: 0
 configure_requires:
   ExtUtils::MakeMaker: 6.31
 dynamic_config: 0
-generated_by: 'Dist::Zilla version 4.102221, CPAN::Meta::Converter version 2.102160'
+generated_by: 'Dist::Zilla version 4.102342, CPAN::Meta::Converter version 2.102400'
 license: gpl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -37,4 +36,4 @@ requires:
   URI::Escape: 1.35
   XML::Simple: 2.16
   perl: 5.008
-version: 3.2.4
+version: 3.2.5
