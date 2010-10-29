@@ -20,7 +20,7 @@ foreach my $plugin (__PACKAGE__->plugins) {
     $plugin->import();
 }
 
-our $VERSION = '3.2.5';
+our $VERSION = '3.2.6';
 
 
 sub new {
@@ -1962,7 +1962,7 @@ MediaWiki::Bot - a MediaWiki bot framework written in Perl
 
 =head1 VERSION
 
-version 3.2.5
+version 3.2.6
 
 =head1 SYNOPSIS
 

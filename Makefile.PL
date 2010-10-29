@@ -35,7 +35,7 @@ my %WriteMakefileArgs = (
     'URI::Escape' => '1.35',
     'XML::Simple' => '2.16'
   },
-  'VERSION' => '3.2.5',
+  'VERSION' => '3.2.6',
   'test' => {
     'TESTS' => 't/*.t'
   }
