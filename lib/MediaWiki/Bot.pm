@@ -1,6 +1,6 @@
 package MediaWiki::Bot;
 # ABSTRACT: a MediaWiki bot framework written in Perl
-
+our $VERSION = 3.2.7;# VERSION
 use strict;
 use warnings;
 
@@ -15,12 +15,9 @@ use MediaWiki::API 0.20;
 
 use Module::Pluggable search_path => [qw(MediaWiki::Bot::Plugin)], 'require' => 1;
 foreach my $plugin (__PACKAGE__->plugins) {
-
     #print "Found plugin $plugin\n";
     $plugin->import();
 }
-
-our $VERSION = '3.2.6';
 
 
 sub new {
@@ -36,15 +33,15 @@ sub new {
     my $debug;
 
     if (ref $_[0] eq 'HASH') {
-        $agent      = $_[0]->{'agent'};
-        $assert     = $_[0]->{'assert'};
-        $operator   = $_[0]->{'operator'};
-        $maxlag     = $_[0]->{'maxlag'};
-        $protocol   = $_[0]->{'protocol'};
-        $host       = $_[0]->{'host'};
-        $path       = $_[0]->{'path'};
-        $login_data = $_[0]->{'login_data'};
-        $debug      = $_[0]->{'debug'};
+        $agent      = $_[0]->{agent};
+        $assert     = $_[0]->{assert};
+        $operator   = $_[0]->{operator};
+        $maxlag     = $_[0]->{maxlag};
+        $protocol   = $_[0]->{protocol};
+        $host       = $_[0]->{host};
+        $path       = $_[0]->{path};
+        $login_data = $_[0]->{login_data};
+        $debug      = $_[0]->{debug};
     }
     else {
         $agent    = shift;
@@ -62,7 +59,7 @@ sub new {
 
     # Set defaults
     unless ($agent) {
-        $agent  = "MediaWiki::Bot/$VERSION";
+        $agent  = 'MediaWiki::Bot/' . (defined __PACKAGE__->VERSION ? __PACKAGE__->VERSION : 'dev');
         $agent .= " (User:$operator)" if $operator;
     }
 
@@ -70,9 +67,15 @@ sub new {
     $self->{errstr}   = '';
     $self->{assert}   = $assert;
     $self->{operator} = $operator;
-    $self->{'debug'}  = $debug || 0;
-    $self->{api}      = MediaWiki::API->new();
-    $self->{api}->{ua}->agent($agent);
+    $self->{debug}    = $debug || 0;
+    $self->{api}      = MediaWiki::API->new({
+        max_lag         => (defined $maxlag ? $maxlag : 5),
+        max_lag_delay   => 5,
+        max_lag_retries => 5,
+        retries         => 5,
+        retry_delay     => 10, # no infinite loops
+    });
+    $self->{api}->{ua}->agent($agent) if defined $agent;
 
     # Set wiki (handles setting $self->{host} etc)
     $self->set_wiki({
@@ -81,12 +84,6 @@ sub new {
             path     => $path,
     });
 
-    $self->{api}->{config}->{max_lag}         = $maxlag || 5;
-    $self->{api}->{config}->{max_lag_delay}   = 1;
-    $self->{api}->{config}->{retries}         = 5;
-    $self->{api}->{config}->{max_lag_retries} = -1;
-    $self->{api}->{config}->{retry_delay}     = 30;
-
     # Log-in, and maybe autoconfigure
     if ($login_data) {
         my $success = $self->login($login_data);
@@ -94,7 +91,7 @@ sub new {
             return $self;
         }
         else {
-            carp "Couldn't log in with supplied settings" if $self->{'debug'};
+            carp "Couldn't log in with supplied settings" if $self->{debug};
             return;
         }
     }
@@ -450,7 +447,6 @@ sub get_history {
     my $direction = shift;
 
     my @return;
-    my @revisions;
 
     my $hash = {
         action  => 'query',
@@ -527,7 +523,7 @@ sub get_id {
 
     my $res = $self->{api}->api($hash);
     return $self->_handle_api_error() unless $res;
-    my ($id, $data) = %{ $res->{query}->{pages} };
+    my ($id) = %{ $res->{query}->{pages} };
     if ($id == -1) {
         return;
     }
@@ -663,8 +659,6 @@ sub get_last {
     my $page = shift;
     my $user = shift;
 
-    my $revertto = 0;
-
     my $res = $self->{api}->api({
             action        => 'query',
             titles        => $page,
@@ -674,7 +668,8 @@ sub get_last {
             rvexcludeuser => $user,
     });
     return $self->_handle_api_error() unless $res;
-    my ($id, $data) = %{ $res->{query}->{pages} };
+
+    my (undef, $data) = %{ $res->{query}->{pages} };
     my $revid = $data->{'revisions'}[0]->{'revid'};
     return $revid;
 }
@@ -813,7 +808,7 @@ sub get_pages_in_category {
     my $options  = shift;
 
     if ($category =~ m/:/) {    # It might have a namespace name
-        my ($cat, $title) = split(/:/, $category, 2);
+        my ($cat) = split(/:/, $category, 2);
         if ($cat ne 'Category') {    # 'Category' is a canonical name for ns14
             my $ns_data     = $self->_get_ns_data();
             my $cat_ns_name = $ns_data->{'14'};        # ns14 gives us the localized name for 'Category'
@@ -1074,7 +1069,6 @@ sub test_image_exists {
     my @return;
     # use Data::Dumper; print STDERR Dumper($res) and die;
     foreach my $id (keys %{ $res->{query}->{pages} }) {
-        my $title = $res->{query}->{pages}->{$id}->{title};
         if ($res->{query}->{pages}->{$id}->{imagerepository} eq 'shared') {
             if ($multi) {
                 unshift @return, 2;
@@ -1152,14 +1146,7 @@ sub count_contributions {
         },
         { max => 1 });
     return $self->_handle_api_error() unless $res;
-    my $return = ${$res}[0]->{'editcount'};
-
-    if ($return or $_[0] > 1) {
-        return $return;
-    }
-    else {
-        return $self->count_contributions($username, $_[0] + 1);
-    }
+    return ${$res}[0]->{'editcount'};
 }
 
 
@@ -1190,7 +1177,7 @@ sub recent_edit_to_page {
         },
         { max => 1 });
     return $self->_handle_api_error() unless $res;
-    my ($id, $data) = %{ $res->{query}->{pages} };
+    my $data = ( %{ $res->{query}->{pages} } )[1];
     return $data->{revisions}[0]->{timestamp};
 }
 
@@ -1203,7 +1190,6 @@ sub get_users {
     my $direction = shift;
 
     my @return;
-    my @revisions;
 
     if ($limit > 50) {
         $self->{errstr} = "Error requesting history for $pagename: Limit may not be set to values above 50";
@@ -1294,15 +1280,23 @@ sub expandtemplates {
 sub get_allusers {
     my $self   = shift;
     my $limit  = shift || 'max';
-    my @return;
+    my $group  = shift;
+    my $opts   = shift;
 
-    my $res = $self->{api}->api({
+    my $hash = {
             action  => 'query',
             list    => 'allusers',
-            aulimit => $limit
-    });
+            aulimit => $limit,
+    };
+    $hash->{augroup} = $group if defined $group;
+    $opts->{max} = 1 unless exists $opts->{max};
+    delete $opts->{max} if exists $opts->{max} and $opts->{max} == 0;
+    my $res = $self->{api}->list($hash, $opts);
+    return $self->_handle_api_error() unless $res;
+    return 1 if (!ref $res);    # Not a ref when using callback
 
-    for my $ref (@{ $res->{query}->{allusers} }) {
+    my @return;
+    for my $ref (@{ $res }) {
         push @return, $ref->{name};
     }
     return @return;
@@ -1783,7 +1777,7 @@ sub _get_edittoken { # Actually returns ($edittoken, $basetimestamp, $starttimes
         intoken => $type,
     }) or return $self->_handle_api_error();
 
-    my ($id, $data) = %{ $res->{'query'}->{'pages'} };
+    my $data           = ( %{ $res->{'query'}->{'pages'} })[1];
     my $edittoken      = $data->{'edittoken'};
     my $tokentimestamp = $data->{'starttimestamp'};
     my $basetimestamp  = $data->{'revisions'}[0]->{'timestamp'};
@@ -1962,7 +1956,7 @@ MediaWiki::Bot - a MediaWiki bot framework written in Perl
 
 =head1 VERSION
 
-version 3.2.6
+version 3.2.7
 
 =head1 SYNOPSIS
 
@@ -2479,9 +2473,9 @@ Retained for backwards compatibility. Use was_blocked($user) for clarity.
 
 Expands templates on $page, using $text if provided, otherwise loading the page text automatically.
 
-=head2 get_allusers($limit)
+=head2 get_allusers($limit, $group, $opts)
 
-Returns an array of all users. Default limit is 500.
+Returns an array of all users. Default limit is 500. Optionally specify a group to list that group only. The last optional parameter is an options hashref, as detailed elsewhere.
 
 =head2 db_to_domain($wiki)
 
@@ -2728,7 +2722,7 @@ patch and bug report contributors
 
 =head1 COPYRIGHT AND LICENSE
 
-This software is Copyright (c) 2010 by the MediaWiki::Bot team <perlwikibot@googlegroups.com>.
+This software is Copyright (c) 2011 by the MediaWiki::Bot team <perlwikibot@googlegroups.com>.
 
 This is free software, licensed under:
 

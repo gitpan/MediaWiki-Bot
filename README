@@ -2,7 +2,7 @@ NAME
     MediaWiki::Bot - a MediaWiki bot framework written in Perl
 
 VERSION
-    version 3.2.6
+    version 3.2.7
 
 SYNOPSIS
         use MediaWiki::Bot;
@@ -537,8 +537,10 @@ METHODS
     Expands templates on $page, using $text if provided, otherwise loading
     the page text automatically.
 
-  get_allusers($limit)
-    Returns an array of all users. Default limit is 500.
+  get_allusers($limit, $group, $opts)
+    Returns an array of all users. Default limit is 500. Optionally specify
+    a group to list that group only. The last optional parameter is an
+    options hashref, as detailed elsewhere.
 
   db_to_domain($wiki)
     Converts a wiki/database name (enwiki) to the domain name
@@ -761,7 +763,7 @@ AUTHORS
     *   patch and bug report contributors
 
 COPYRIGHT AND LICENSE
-    This software is Copyright (c) 2010 by the MediaWiki::Bot team
+    This software is Copyright (c) 2011 by the MediaWiki::Bot team
     <perlwikibot@googlegroups.com>.
 
     This is free software, licensed under:

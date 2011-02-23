@@ -14,7 +14,7 @@ my %WriteMakefileArgs = (
   'BUILD_REQUIRES' => {
     'File::Find' => '0',
     'File::Temp' => '0',
-    'Test::More' => '0.88',
+    'Test::More' => '0.94',
     'utf8' => '0'
   },
   'CONFIGURE_REQUIRES' => {
@@ -35,7 +35,7 @@ my %WriteMakefileArgs = (
     'URI::Escape' => '1.35',
     'XML::Simple' => '2.16'
   },
-  'VERSION' => '3.2.6',
+  'VERSION' => '3.2.7',
   'test' => {
     'TESTS' => 't/*.t'
   }
