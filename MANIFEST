@@ -54,6 +54,7 @@ t/42-expandtemplates.t
 t/43-recentchanges.t
 t/44-patrol.t
 t/45-contributions.t
+t/46-lexical_warnings.t
 t/98-pod.t
 t/99-pod_coverage.t
 xt/author/critic.t
