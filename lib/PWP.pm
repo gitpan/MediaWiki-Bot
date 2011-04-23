@@ -3,6 +3,8 @@ use warnings;
 
 use MediaWiki::Bot;
 BEGIN {
+    warnings::warn('deprecated', 'PWP is a deprecated alias for MediaWiki::Bot. '
+        . 'Please use the modern name; this one will be removed in a future release');
     *PWP:: = \%MediaWiki::Bot::
 }
 our $VERSION = $PWP::VERSION;
@@ -13,12 +15,13 @@ PWP - Alias for MediaWiki::Bot, previously known as perlwikipedia or PWP
 
 =head1 SYNOPSIS
 
-    use PWP;
-    my $bot = PWP->new();
+    use MediaWiki::Bot;
+    my $bot = MediaWiki::Bot->new();
 
 =head1 DESCRIPTION
 
-See L<MediaWiki::Bot>
+This is a B<deprecated> alias for L<MediaWiki::Bot>, and will be removed in
+a future release. Please use the module's modern name.
 
 =cut
 

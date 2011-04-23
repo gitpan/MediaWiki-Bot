@@ -1,8 +1,8 @@
 ---
-abstract: 'a MediaWiki bot framework written in Perl'
+abstract: 'a high-level bot framework for interacting with MediaWiki wikis'
 author:
-  - 'Dan Collins <en.wp.st47@gmail.com>'
-  - 'Mike.lifeguard <mike.lifeguard@gmail.com>'
+  - 'Dan Collins <dcollins@cpan.org>'
+  - 'Mike.lifeguard <lifeguard@cpan.org>'
   - 'Alex Rowe <alex.d.rowe@gmail.com>'
   - 'Oleg Alexandrov <oleg.alexandrov@gmail.com>'
   - 'jmax.code <jmax.code@gmail.com>'
@@ -12,14 +12,13 @@ author:
   - 'Brian Obio <brianobio@gmail.com>'
   - 'patch and bug report contributors'
 build_requires:
-  File::Find: 0
-  File::Temp: 0
-  Test::More: 0.94
+  Test::More: 0.96
+  Test::Warn: 0
   utf8: 0
 configure_requires:
   ExtUtils::MakeMaker: 6.31
 dynamic_config: 0
-generated_by: 'Dist::Zilla version 4.200004, CPAN::Meta::Converter version 2.110420'
+generated_by: 'Dist::Zilla version 4.200004, CPAN::Meta::Converter version 2.110930'
 license: gpl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -31,9 +30,11 @@ requires:
   Digest::MD5: 2.39
   Encode: 0
   HTML::Entities: 3.28
-  MediaWiki::API: 0.20
+  MediaWiki::API: 0.35
   Module::Pluggable: 0
   URI::Escape: 1.35
   XML::Simple: 2.16
   perl: 5.008
-version: 3.2.7
+resources:
+  bugtracker: http://code.google.com/p/perlwikipedia/issues/list
+version: 3.3.0

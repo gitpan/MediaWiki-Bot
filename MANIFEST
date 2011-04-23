@@ -8,7 +8,6 @@ README
 lib/MediaWiki/Bot.pm
 lib/PWP.pm
 lib/perlwikipedia.pm
-t/00-compile.t
 t/00-init.t
 t/01-api_error.t
 t/02-login.t
@@ -54,14 +53,18 @@ t/41-get_users.t
 t/42-expandtemplates.t
 t/43-recentchanges.t
 t/44-patrol.t
+t/45-contributions.t
 t/98-pod.t
 t/99-pod_coverage.t
+xt/author/critic.t
+xt/release/cpan-changes.t
 xt/release/dist-manifest.t
 xt/release/distmeta.t
 xt/release/eol.t
 xt/release/kwalitee.t
 xt/release/minimum-version.t
 xt/release/no-tabs.t
+xt/release/pod-linkcheck.t
 xt/release/pod-syntax.t
 xt/release/portability.t
 xt/release/synopsis.t

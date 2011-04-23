@@ -9,12 +9,11 @@ use ExtUtils::MakeMaker 6.31;
 
 
 my %WriteMakefileArgs = (
-  'ABSTRACT' => 'a MediaWiki bot framework written in Perl',
-  'AUTHOR' => 'Dan Collins <en.wp.st47@gmail.com>, Mike.lifeguard <mike.lifeguard@gmail.com>, Alex Rowe <alex.d.rowe@gmail.com>, Oleg Alexandrov <oleg.alexandrov@gmail.com>, jmax.code <jmax.code@gmail.com>, Stefan Petrea <stefan.petrea@gmail.com>, kc2aei <kc2aei@gmail.com>, bosborne@alum.mit.edu, Brian Obio <brianobio@gmail.com>, patch and bug report contributors',
+  'ABSTRACT' => 'a high-level bot framework for interacting with MediaWiki wikis',
+  'AUTHOR' => 'Dan Collins <dcollins@cpan.org>, Mike.lifeguard <lifeguard@cpan.org>, Alex Rowe <alex.d.rowe@gmail.com>, Oleg Alexandrov <oleg.alexandrov@gmail.com>, jmax.code <jmax.code@gmail.com>, Stefan Petrea <stefan.petrea@gmail.com>, kc2aei <kc2aei@gmail.com>, bosborne@alum.mit.edu, Brian Obio <brianobio@gmail.com>, patch and bug report contributors',
   'BUILD_REQUIRES' => {
-    'File::Find' => '0',
-    'File::Temp' => '0',
-    'Test::More' => '0.94',
+    'Test::More' => '0.96',
+    'Test::Warn' => '0',
     'utf8' => '0'
   },
   'CONFIGURE_REQUIRES' => {
@@ -30,12 +29,12 @@ my %WriteMakefileArgs = (
     'Digest::MD5' => '2.39',
     'Encode' => '0',
     'HTML::Entities' => '3.28',
-    'MediaWiki::API' => '0.20',
+    'MediaWiki::API' => '0.35',
     'Module::Pluggable' => '0',
     'URI::Escape' => '1.35',
     'XML::Simple' => '2.16'
   },
-  'VERSION' => '3.2.7',
+  'VERSION' => '3.3.0',
   'test' => {
     'TESTS' => 't/*.t'
   }
