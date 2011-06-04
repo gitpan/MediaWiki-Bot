@@ -2,13 +2,10 @@ package MediaWiki::Bot;
 use strict;
 use warnings;
 # ABSTRACT: a high-level bot framework for interacting with MediaWiki wikis
-our $VERSION = '3.3.1'; # VERSION
+our $VERSION = '3.3.1_2'; # VERSION
 
 use HTML::Entities 3.28;
-use URI::Escape 1.35;
-use XML::Simple 2.16;
 use Carp;
-use URI::Escape qw(uri_escape_utf8);
 use Digest::MD5 2.39 qw(md5_hex);
 use Encode qw(encode_utf8);
 use MediaWiki::API 0.35;
@@ -314,13 +311,6 @@ sub _do_sul {
     $self->{debug} = $debug; # Reset debug to it's old value
 
     return $sum == $total;
-}
-
-
-sub set_highlimits {
-    my $self       = shift;
-    warnings::warnif('deprecated', 'Use of set_highlimits() is deprecated, and has no effect');
-    return;
 }
 
 
@@ -1029,6 +1019,49 @@ sub image_usage {
 }
 
 
+sub global_image_usage {
+    my $self    = shift;
+    my $image   = shift;
+    my $limit   = shift;
+    my $filterlocal = shift;
+    $limit = defined $limit ? $limit : 500;
+
+    if ($image !~ m/^File:|Image:/) {
+        my $ns_data = $self->_get_ns_data();
+        my $image_ns_name = $ns_data->{6};
+        if ($image !~ m/^\Q$image_ns_name\E:/) {
+            $image = "$image_ns_name:$image";
+        }
+    }
+
+    my @data;
+    my $cont;
+    while ($limit ? scalar @data < $limit : 1) {
+        my $hash = {
+            action          => 'query',
+            prop            => 'globalusage',
+            titles          => $image,
+            gufilterlocal   => $filterlocal,
+            gulimit         => 'max',
+        };
+        $hash->{gucontinue} = $cont if $cont;
+        my $res = $self->{api}->api($hash);
+        return $self->_handle_api_error() and last unless $res;
+
+        $cont = $res->{'query-continue'}->{globalusage}->{gucontinue};
+        warn "gucontinue: $cont\n" if $cont and $self->{debug} > 1;
+        my $page_id = (keys %{ $res->{query}->{pages} })[0];
+        my $results = $res->{query}->{pages}->{$page_id}->{globalusage};
+        push @data, @$results;
+        last unless $cont;
+    }
+
+    return @data > $limit
+        ? @data[0 .. $limit-1]
+        : @data;
+}
+
+
 sub links_to_image {
     warnings::warnif('deprecated', 'links_to_image is an alias of image_usage; '
         . 'please use the new name');
@@ -1076,10 +1109,10 @@ sub test_image_exists {
     my $self  = shift;
     my $image = shift;
 
-    my $multi = 0;
+    my $multi;
     if (ref $image eq 'ARRAY') {
+        $multi = $image; # so we know to return a hash/scalar & keep track of order
         $image = join('|', @$image);
-        $multi = 1; # so we know whether to return a hash or a single scalar
     }
 
     my $res = $self->{api}->api({
@@ -1090,9 +1123,20 @@ sub test_image_exists {
     });
     return $self->_handle_api_error() unless $res;
 
+    my @sorted_ids;
+    if ($multi) {
+        my %mapped;
+        $mapped{ $res->{query}->{pages}->{$_}->{title} } = $_
+            for (keys %{ $res->{query}->{pages} });
+        foreach my $file ( @$multi ) {
+            unshift @sorted_ids, $mapped{$file};
+        }
+    }
+    else {
+        push @sorted_ids, keys %{ $res->{query}->{pages} };
+    }
     my @return;
-    # use Data::Dumper; print STDERR Dumper($res) and die;
-    foreach my $id (keys %{ $res->{query}->{pages} }) {
+    foreach my $id (@sorted_ids) {
         if ($res->{query}->{pages}->{$id}->{imagerepository} eq 'shared') {
             if ($multi) {
                 unshift @return, 2;
@@ -1985,7 +2029,7 @@ MediaWiki::Bot - a high-level bot framework for interacting with MediaWiki wikis
 
 =head1 VERSION
 
-version 3.3.1
+version 3.3.1_2
 
 =head1 SYNOPSIS
 
@@ -2184,11 +2228,6 @@ described by L<LWP::UserAgent>:
                             pass    => "password",
                         }
     }) or die "Couldn't log in";
-
-=head2 set_highlimits
-
-B<This method is deprecated> and has no effect, other than to emit
-deprecation warnings.
 
 =head2 logout
 
@@ -2679,6 +2718,18 @@ Or, make use of the L</"Options hashref"> to do incremental processing:
             print "$title\n";
         }
     }
+
+=head2 global_image_usage($image, $results, $filterlocal)
+
+Returns an array of hashrefs of data about pages which use the given image.
+
+    my @data = $bot->global_image_usage('File:Albert Einstein Head.jpg');
+
+The keys in each hashref are title, url, and wiki. C<$results> is the maximum
+number of results that will be returned (not the maximum number of requests that
+will be sent, like C<max> in the L</"Options hashref">); the default is to
+attempt to fetch 500 (set to 0 to get all results). C<$filterlocal> will filter
+out local uses of the image.
 
 =head2 links_to_image
 

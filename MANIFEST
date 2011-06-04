@@ -6,8 +6,6 @@ META.yml
 Makefile.PL
 README
 lib/MediaWiki/Bot.pm
-lib/PWP.pm
-lib/perlwikipedia.pm
 t/00-init.t
 t/01-api_error.t
 t/02-login.t
@@ -48,13 +46,13 @@ t/36-email.t
 t/37-move.t
 t/38-test_image_exists.t
 t/39-image_usage.t
-t/40-set_highlimits.t
 t/41-get_users.t
 t/42-expandtemplates.t
 t/43-recentchanges.t
 t/44-patrol.t
 t/45-contributions.t
 t/46-lexical_warnings.t
+t/47-global_image_usage.t
 t/98-pod.t
 t/99-pod_coverage.t
 xt/author/critic.t
