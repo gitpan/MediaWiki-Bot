@@ -51,7 +51,6 @@ t/42-expandtemplates.t
 t/43-recentchanges.t
 t/44-patrol.t
 t/45-contributions.t
-t/46-lexical_warnings.t
 t/47-global_image_usage.t
 t/98-pod.t
 t/99-pod_coverage.t
@@ -62,9 +61,11 @@ xt/release/distmeta.t
 xt/release/eol.t
 xt/release/kwalitee.t
 xt/release/minimum-version.t
+xt/release/mojibake.t
 xt/release/no-tabs.t
 xt/release/pod-linkcheck.t
 xt/release/pod-syntax.t
 xt/release/portability.t
 xt/release/synopsis.t
+xt/release/test-version.t
 xt/release/unused-vars.t
