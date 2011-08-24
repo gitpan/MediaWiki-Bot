@@ -2,13 +2,13 @@ package MediaWiki::Bot;
 use strict;
 use warnings;
 # ABSTRACT: a high-level bot framework for interacting with MediaWiki wikis
-our $VERSION = '3.4.0'; # VERSION
+our $VERSION = 'v3.4.1'; # VERSION
 
 use HTML::Entities 3.28;
 use Carp;
 use Digest::MD5 2.39 qw(md5_hex);
 use Encode qw(encode_utf8);
-use MediaWiki::API 0.35;
+use MediaWiki::API 0.36;
 
 use Module::Pluggable search_path => [qw(MediaWiki::Bot::Plugin)], 'require' => 1;
 foreach my $plugin (__PACKAGE__->plugins) {
@@ -76,6 +76,7 @@ sub new {
         max_lag_retries => 5,
         retries         => 5,
         retry_delay     => 10, # no infinite loops
+        use_http_get    => 1,  # use HTTP GET to make certain requests cacheable
     });
     $self->{api}->{ua}->agent($agent) if defined $agent;
 
@@ -140,6 +141,7 @@ sub set_wiki {
         or ((defined($self->{protocol})) and ($self->{protocol} ne $protocol))
     ) {
         delete $self->{ns_data} if $self->{ns_data};
+        delete $self->{ns_alias_data} if $self->{ns_alias_data};
     }
 
     $self->{protocol} = $protocol;
@@ -587,16 +589,7 @@ sub get_pages {
         }
     }
 
-    # Based on api.php?action=query&meta=siteinfo&siprop=namespaces|namespacealiases
-    # Should be done on an as-needed basis! This is only correct for enwiki (and
-    # it is probably incomplete anyways, or will be eventually).
-    my $expand = {
-        'WP'         => 'Wikipedia',
-        'WT'         => 'Wikipedia talk',
-        'Image'      => 'File',
-        'Image talk' => 'File talk',
-    };
-
+    my $expand = $self->_get_ns_alias_data();
     # Only for those article names that remained after the first part
     # If we're here we are dealing most likely with a WP:CSD type of article name
     for my $title (keys %$diff) {
@@ -608,7 +601,7 @@ sub get_pages {
                 warn "Detected article name that needed expanding $title\n" if $self->{debug} > 1;
 
                 $return{$title} = $v;
-                if ($v =~ m/\#REDIRECT\s\[\[([^\[\]]+)\]\]/) {
+                if (defined $v and $v =~ m/\#REDIRECT\s\[\[([^\[\]]+)\]\]/) {
                     $v = $self->get_text($1);
                     $return{$title} = $v;
                 }
@@ -673,7 +666,7 @@ sub get_last {
             prop          => 'revisions',
             rvlimit       => 1,
             rvprop        => 'ids|user',
-            rvexcludeuser => $user,
+            rvexcludeuser => $user || '',
     });
     return $self->_handle_api_error() unless $res;
 
@@ -757,9 +750,9 @@ sub what_links_here {
         action      => 'query',
         list        => 'backlinks',
         bltitle     => $page,
-        blnamespace => $ns,
         bllimit     => 'max',
     };
+    $hash->{blnamespace}   = $ns if $ns;
     $hash->{blfilterredir} = $filter if $filter;
     $options->{max} = 1 unless $options->{max};
 
@@ -794,10 +787,10 @@ sub list_transclusions {
         action      => 'query',
         list        => 'embeddedin',
         eititle     => $page,
-        einamespace => $ns,
         eilimit     => 'max',
     };
-    $hash->{'eifilterredir'} = $filter if $filter;
+    $hash->{eifilterredir} = $filter if $filter;
+    $hash->{einamespace}   = $ns if $ns;
     $options->{max} = 1 unless $options->{max};
 
     my $res = $self->{api}->list($hash, $options);
@@ -910,10 +903,10 @@ sub linksearch {
         list        => 'exturlusage',
         euprop      => 'url|title',
         euquery     => $link,
-        eunamespace => $ns,
-        euprotocol  => $prot,
         eulimit     => 'max',
     };
+    $hash->{eunamespace} = $ns if $ns;
+    $hash->{euprotocol}  = $prot if $prot;
     $options->{max} = 1 unless $options->{max};
 
     my $res = $self->{api}->list($hash, $options);
@@ -1000,9 +993,9 @@ sub image_usage {
         action          => 'query',
         list            => 'imageusage',
         iutitle         => $image,
-        iunamespace     => $ns,
         iulimit         => 'max',
     };
+    $hash->{iunamespace} = $ns if $ns;
     if (defined($filter) and $filter =~ m/(all|redirects|nonredirects)/) {
         $hash->{'iufilterredir'} = $1;
     }
@@ -1041,10 +1034,12 @@ sub global_image_usage {
             action          => 'query',
             prop            => 'globalusage',
             titles          => $image,
-            gufilterlocal   => $filterlocal,
+            # gufilterlocal   => $filterlocal,
             gulimit         => 'max',
         };
-        $hash->{gucontinue} = $cont if $cont;
+        $hash->{gufilterlocal} = $filterlocal if $filterlocal;
+        $hash->{gucontinue}    = $cont if $cont;
+
         my $res = $self->{api}->api($hash);
         return $self->_handle_api_error() and last unless $res;
 
@@ -1733,11 +1728,19 @@ sub patrol {
         return @return;
     }
     else {
-        my ($token) = $self->_get_edittoken();
+        my $token_res = $self->{api}->api({
+            action  => 'query',
+            list    => 'recentchanges',
+            rctoken => 'patrol',
+            rclimit => 1,
+        });
+        return $self->_handle_api_error() unless $token_res;
+        my $token = $token_res->{query}->{recentchanges}->[0]->{patroltoken};
+
         my $res = $self->{api}->api({
-                action => 'patrol',
-                rcid   => $rcid,
-                token  => $token,
+            action  => 'patrol',
+            rcid    => $rcid,
+            token   => $token,
         });
         return $self->_handle_api_error() unless $res;
         return $res;
@@ -1835,6 +1838,68 @@ sub contributions {
     return $res->[0]; # Can we make this more useful?
 }
 
+
+sub upload {
+    my $self = shift;
+    my $args = shift;
+
+    my $data = delete $args->{data};
+    if (!defined $data and defined $args->{file}) {
+            $data = do { local $/; open my $in, '<:raw', $args->{file} or die $!; <$in> };
+    }
+    unless (defined $data) {
+        $self->{error}->{code} = 6;
+        $self->{error}->{details} = q{You must provide either file contents or a filename.};
+    }
+    unless (defined $args->{file} or defined $args->{title}) {
+        $self->{error}->{code} = 6;
+        $self->{error}->{details} = q{You must specify a title to upload to.};
+        return undef;
+    }
+
+    my $filename = $args->{title} || do { require File::Basename; File::Basename::basename($args->{file}) };
+    my $success = $self->{api}->edit({
+        action   => 'upload',
+        filename => $filename,
+        comment  => $args->{summary},
+        file     => [ undef, $filename, Content => $data ],
+    });
+    return $success;
+}
+
+
+sub usergroups {
+    my $self = shift;
+    my $user = shift;
+
+    $user =~ s/^User://;
+
+    my $res = $self->{api}->api({
+        action  => 'query',
+        list    => 'users',
+        ususers => $user,
+        usprop  => 'groups',
+        ustoken => 'userrights',
+    });
+    return $self->_handle_api_error() unless $res;
+
+    foreach my $res_user (@{ $res->{query}->{users} }) {
+        next unless $res_user->{name} eq $user;
+
+        # Cache the userrights token on the assumption that we'll use it shortly to change the rights
+        $self->{userrightscache} = {
+            user    => $user,
+            token   => $res_user->{userrightstoken},
+            groups  => $res_user->{groups},
+        };
+
+        return @{ $res_user->{groups} }; # SUCCESS
+    }
+
+    return $self->_handle_api_error({ code => 3, details => qq{Results for $user weren't returned by the API} });
+}
+
+
 ################
 # Internal use #
 ################
@@ -1860,12 +1925,18 @@ sub _get_edittoken { # Actually returns ($edittoken, $basetimestamp, $starttimes
 
 sub _handle_api_error {
     my $self = shift;
+    my $error = shift;
+
     carp 'Error code '
         . $self->{api}->{error}->{code}
         . ': '
         . $self->{api}->{error}->{details} if $self->{debug};
-    $self->{error} = $self->{api}->{error};
-    return;
+     $self->{error} =
+        (defined $error and ref $error eq 'HASH' and exists $error->{code} and exists $error->{details})
+        ? $error
+        : $self->{api}->{error};
+
+    return undef;
 }
 
 sub _is_loggedin {
@@ -2006,7 +2077,7 @@ sub _get_ns_data {
     my $self = shift;
 
     # If we have it already, return the cached data
-    return $self->{ns_data} if exists($self->{ns_data});
+    return $self->{ns_data} if exists $self->{ns_data};
 
     # If we haven't returned by now, we have to ask the API
     my %ns_data = $self->get_namespace_names();
@@ -2017,11 +2088,30 @@ sub _get_ns_data {
     return $self->{ns_data};
 }
 
+sub _get_ns_alias_data {
+    my $self = shift;
+
+    return $self->{ns_alias_data} if exists $self->{ns_alias_data};
+
+    my $ns_res = $self->{api}->api({
+        action  => 'query',
+        meta    => 'siteinfo',
+        siprop  => 'namespacealiases|namespaces',
+    });
+
+    foreach my $entry (@{ $ns_res->{query}->{namespacealiases} }) { # what a mess D:
+        $self->{ns_alias_data}->{ $entry->{'*'} } = $ns_res->{query}->{namespaces}->{ $entry->{id} }->{'*'};
+    }
+    return $self->{ns_alias_data};
+}
+
 
 1;
 
 __END__
 =pod
+
+=encoding utf-8
 
 =head1 NAME
 
@@ -2029,7 +2119,7 @@ MediaWiki::Bot - a high-level bot framework for interacting with MediaWiki wikis
 
 =head1 VERSION
 
-version 3.4.0
+version v3.4.1
 
 =head1 SYNOPSIS
 
@@ -3134,6 +3224,20 @@ callback if you I<check> that it is a top edit:
 Returns an array of hashrefs of data for the user's contributions. $ns can be an
 arrayref of namespace numbers. $options can be specified as in L</linksearch>.
 
+=head2 upload
+
+    $bot->upload({ data => $file_contents, summary => 'uploading file' });
+    $bot->upload({ file => $file_name,     title   => 'Target filename.png' });
+
+Upload a file to the wiki. Specify the file by either giving the filename, which
+will be read in, or by giving the data directly.
+
+=head2 usergroups
+
+Returns a list of the usergroups a user is in:
+
+    my @usergroups = $bot->usergroups('Mike.lifeguard');
+
 =head2 Options hashref
 
 This is passed through to the lower-level interface L<MediaWiki::API>, and is
@@ -3186,6 +3290,31 @@ ask for help.
 
 All functions will return undef in any handled error situation. Further error
 data is stored in C<< $bot->{error}->{code} >> and C<< $bot->{error}->{details} >>.
+
+=head1 AVAILABILITY
+
+The project homepage is L<https://metacpan.org/module/MediaWiki::Bot>.
+
+The latest version of this module is available from the Comprehensive Perl
+Archive Network (CPAN). Visit L<http://www.perl.com/CPAN/> to find a CPAN
+site near you, or see L<http://search.cpan.org/dist/MediaWiki-Bot/>.
+
+The development version lives at L<http://github.com/MediaWiki-Bot/MediaWiki-Bot>
+and may be cloned from L<git://github.com/MediaWiki-Bot/MediaWiki-Bot.git>.
+Instead of sending patches, please fork this project using the standard
+git and github infrastructure.
+
+=head1 SOURCE
+
+The development version is on github at L<http://github.com/MediaWiki-Bot/MediaWiki-Bot>
+and may be cloned from L<git://github.com/MediaWiki-Bot/MediaWiki-Bot.git>
+
+=head1 BUGS AND LIMITATIONS
+
+No bugs have been reported.
+
+Please report any bugs or feature requests through the web interface at
+L<https://github.com/MediaWiki-Bot/MediaWiki-Bot/issues>.
 
 =head1 AUTHORS
 

@@ -1,6 +1,6 @@
 use strict;
 use warnings;
-use Test::More tests => 2;
+use Test::More tests => 1;
 
 use MediaWiki::Bot;
 my $t = __FILE__;
@@ -13,12 +13,6 @@ my $bot = MediaWiki::Bot->new({
 if(defined($ENV{'PWPMakeTestSetWikiHost'})) {
     $bot->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
 }
-{
-    my @array = $bot->get_allusers(10);
-    is(scalar(@array), 10, 'Got 10 users');
-}
 
-{
-    my @array = $bot->get_allusers(10, 'sysop');
-    is(scalar(@array), 10, 'Got 10 sysops');
-}
+my @usergroups = $bot->usergroups('Mike.lifeguard');
+is_deeply [ sort @usergroups ], [ sort qw(* user autoconfirmed patroller editor reviewer sysop) ], 'Right usergroups were returned';

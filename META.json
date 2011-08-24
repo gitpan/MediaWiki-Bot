@@ -1,0 +1,74 @@
+{
+   "abstract" : "a high-level bot framework for interacting with MediaWiki wikis",
+   "author" : [
+      "Dan Collins <dcollins@cpan.org>",
+      "Mike.lifeguard <lifeguard@cpan.org>",
+      "Alex Rowe <alex.d.rowe@gmail.com>",
+      "Oleg Alexandrov <oleg.alexandrov@gmail.com>",
+      "jmax.code <jmax.code@gmail.com>",
+      "Stefan Petrea <stefan.petrea@gmail.com>",
+      "kc2aei <kc2aei@gmail.com>",
+      "bosborne@alum.mit.edu",
+      "Brian Obio <brianobio@gmail.com>",
+      "patch and bug report contributors"
+   ],
+   "dynamic_config" : 0,
+   "generated_by" : "Dist::Zilla version 4.200015, CPAN::Meta::Converter version 2.112150",
+   "license" : [
+      "gpl_3"
+   ],
+   "meta-spec" : {
+      "url" : "http://search.cpan.org/perldoc?CPAN::Meta::Spec",
+      "version" : "2"
+   },
+   "name" : "MediaWiki-Bot",
+   "prereqs" : {
+      "build" : {
+         "requires" : {
+            "Module::Build" : "0.3601"
+         }
+      },
+      "configure" : {
+         "requires" : {
+            "ExtUtils::MakeMaker" : "6.30",
+            "Module::Build" : "0.3601"
+         }
+      },
+      "runtime" : {
+         "requires" : {
+            "Carp" : 0,
+            "Digest::MD5" : "2.39",
+            "Encode" : 0,
+            "File::Basename" : 0,
+            "HTML::Entities" : "3.28",
+            "LWP::Protocol::https" : "0.57",
+            "MediaWiki::API" : "0.36",
+            "Module::Pluggable" : 0,
+            "perl" : "5.008"
+         }
+      },
+      "test" : {
+         "requires" : {
+            "File::Find" : 0,
+            "File::Temp" : 0,
+            "Test::More" : "0.96",
+            "Test::Warn" : 0,
+            "utf8" : 0
+         }
+      }
+   },
+   "release_status" : "testing",
+   "resources" : {
+      "bugtracker" : {
+         "web" : "https://github.com/MediaWiki-Bot/MediaWiki-Bot/issues"
+      },
+      "homepage" : "https://metacpan.org/module/MediaWiki::Bot",
+      "repository" : {
+         "type" : "git",
+         "url" : "git://github.com/MediaWiki-Bot/MediaWiki-Bot.git",
+         "web" : "https://github.com/MediaWiki-Bot/MediaWiki-Bot"
+      }
+   },
+   "version" : "v3.4.1"
+}
+

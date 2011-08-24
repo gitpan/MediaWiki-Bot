@@ -1,5 +1,13 @@
 Changelog for MediaWiki-Bot
 
+v3.4.1    2011-08-24
+    * Use HTTP GET so some requests are cacheable (Thanks to Jools Wills)
+    * Add support for file uploads via API (Thanks to Jools Wills)
+    * Patrolling edits now fetches the patrol token manually, and should work
+    * Add support for querying a user's usergroups, and infrastructure to support changing
+      usergroups with the Admin plugin
+    * get_pages now handles namespace aliases dynamically, and should work on all wikis
+
 3.4.0     2011-06-19
     * Packaging updates & changes from last 2 alphas
 
