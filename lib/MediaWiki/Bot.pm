@@ -2,7 +2,7 @@ package MediaWiki::Bot;
 use strict;
 use warnings;
 # ABSTRACT: a high-level bot framework for interacting with MediaWiki wikis
-our $VERSION = 'v3.4.1'; # VERSION
+our $VERSION = 'v3.4.2'; # VERSION
 
 use HTML::Entities 3.28;
 use Carp;
@@ -2119,7 +2119,7 @@ MediaWiki::Bot - a high-level bot framework for interacting with MediaWiki wikis
 
 =head1 VERSION
 
-version v3.4.1
+version v3.4.2
 
 =head1 SYNOPSIS
 

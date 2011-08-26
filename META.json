@@ -57,7 +57,7 @@
          }
       }
    },
-   "release_status" : "testing",
+   "release_status" : "stable",
    "resources" : {
       "bugtracker" : {
          "web" : "https://github.com/MediaWiki-Bot/MediaWiki-Bot/issues"
@@ -69,6 +69,6 @@
          "web" : "https://github.com/MediaWiki-Bot/MediaWiki-Bot"
       }
    },
-   "version" : "v3.4.1"
+   "version" : "v3.4.2"
 }
 
