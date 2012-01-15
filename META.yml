@@ -22,12 +22,15 @@ configure_requires:
   ExtUtils::MakeMaker: 6.30
   Module::Build: 0.3601
 dynamic_config: 0
-generated_by: 'Dist::Zilla version 4.200015, CPAN::Meta::Converter version 2.112150'
+generated_by: 'Dist::Zilla version 4.300006, CPAN::Meta::Converter version 2.113640'
 license: gpl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
   version: 1.4
 name: MediaWiki-Bot
+no_index:
+  directory:
+    - corpus
 requires:
   Carp: 0
   Digest::MD5: 2.39
@@ -38,8 +41,10 @@ requires:
   MediaWiki::API: 0.36
   Module::Pluggable: 0
   perl: 5.008
+  strict: 0
+  warnings: 0
 resources:
   bugtracker: https://github.com/MediaWiki-Bot/MediaWiki-Bot/issues
   homepage: https://metacpan.org/module/MediaWiki::Bot
   repository: git://github.com/MediaWiki-Bot/MediaWiki-Bot.git
-version: v3.4.2
+version: 3.004003

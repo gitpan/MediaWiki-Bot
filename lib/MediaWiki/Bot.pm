@@ -2,7 +2,7 @@ package MediaWiki::Bot;
 use strict;
 use warnings;
 # ABSTRACT: a high-level bot framework for interacting with MediaWiki wikis
-our $VERSION = 'v3.4.2'; # VERSION
+our $VERSION = '3.004003'; # VERSION
 
 use HTML::Entities 3.28;
 use Carp;
@@ -67,7 +67,7 @@ sub new {
 
     my $self = bless({}, $package);
     $self->{errstr}   = '';
-    $self->{assert}   = $assert;
+    $self->{assert}   = $assert if $assert;
     $self->{operator} = $operator;
     $self->{debug}    = $debug || 0;
     $self->{api}      = MediaWiki::API->new({
@@ -341,7 +341,7 @@ sub edit {
         $page      = $_[0]->{page};
         $text      = $_[0]->{text};
         $summary   = $_[0]->{summary};
-        $is_minor  = $_[0]->{is_minor};
+        $is_minor  = $_[0]->{minor};
         $assert    = $_[0]->{assert};
         $markasbot = $_[0]->{markasbot};
         $section   = $_[0]->{section};
@@ -383,10 +383,15 @@ sub edit {
         basetimestamp  => $lastedit,                      # Guard against edit conflicts
         starttimestamp => $tokentime,                     # Guard against the page being deleted/moved
         bot            => $markasbot,
-        assert         => $assert,
-        minor          => $is_minor,
         section        => $section,
+        ( $assert ? (assert => $assert) : ()),
     };
+    if ($is_minor) {
+        $hash->{minor} = 1;
+    }
+    else {
+        $hash->{notminor} = 1;
+    }
     delete $hash->{section} unless defined($section);
 
     my $res = $self->{api}->api($hash);
@@ -461,7 +466,7 @@ sub get_history {
         action  => 'query',
         prop    => 'revisions',
         titles  => $pagename,
-        rvprop  => 'ids|timestamp|user|comment',
+        rvprop  => 'ids|timestamp|user|comment|flags',
         rvlimit => $limit
     };
 
@@ -488,6 +493,7 @@ sub get_history {
                 timestamp_date => $timestamp_date,
                 timestamp_time => $timestamp_time,
                 comment        => $comment,
+                minor          => exists $hash->{minor},
             });
     }
     return @return;
@@ -723,6 +729,7 @@ sub recentchanges {
         list        => 'recentchanges',
         rcnamespace => $ns,
         rclimit     => $limit,
+        rcprop      => 'user|comment|timestamp|title|ids',
     };
     $options->{max} = 1 unless $options->{max};
 
@@ -1735,6 +1742,17 @@ sub patrol {
             rclimit => 1,
         });
         return $self->_handle_api_error() unless $token_res;
+        if (exists $token_res->{warnings} and
+            $token_res->{warnings}->{recentchanges}->{'*'} eq q{Action 'patrol' is not allowed for the current user})
+        {
+            $self->{error} = {
+                code    => 3,
+                details => 'permissiondenied: ' . $token_res->{warnings}->{recentchanges}->{'*'},
+                stacktrace => 'permissiondenied: ' . $token_res->{warnings}->{recentchanges}->{'*'}
+                    . ' at ' . __FILE__ . ' line ' . __LINE__,
+            };
+            return undef;
+        }
         my $token = $token_res->{query}->{recentchanges}->[0]->{patroltoken};
 
         my $res = $self->{api}->api({
@@ -1742,7 +1760,10 @@ sub patrol {
             rcid    => $rcid,
             token   => $token,
         });
-        return $self->_handle_api_error() unless $res;
+        return $self->_handle_api_error()
+            if !$res
+            or $self->{error}->{details} && $self->{error}->{details} =~ m/^(?:permissiondenied|badtoken)/;
+
         return $res;
     }
 }
@@ -2119,7 +2140,7 @@ MediaWiki::Bot - a high-level bot framework for interacting with MediaWiki wikis
 
 =head1 VERSION
 
-version v3.4.2
+version 3.004003
 
 =head1 SYNOPSIS
 
@@ -2418,7 +2439,7 @@ I<ignorewarnings> ignores warnings.
 Returns an array containing the history of the specified $page_title, with
 $limit number of revisions (default is as many as possible).
 
-The array returned contains hashrefs with keys: revid, user, comment,
+The array returned contains hashrefs with keys: revid, user, comment, minor,
 timestamp_date, and timestamp_time.
 
 =head2 get_text
@@ -2563,17 +2584,17 @@ arrayref of namespace numbers to get results from several namespaces.
 
 The L</"Options hashref">:
 
-    my @rc = $bot->update_rc(4, 10);
+    my @rc = $bot->recentchanges(4, 10);
     foreach my $hashref (@rc) {
-        print $hashref->{'title'} . "\n";
+        print $hashref->{title} . "\n";
     }
 
     # Or, use a callback for incremental processing:
-    $bot->update_rc(0, 500, { hook => \&mysub });
+    $bot->recentchanges(0, 500, { hook => \&mysub });
     sub mysub {
         my ($res) = @_;
         foreach my $hashref (@$res) {
-            my $page = $hashref->{'title'};
+            my $page = $hashref->{title};
             print "$page\n";
         }
     }
@@ -3181,7 +3202,8 @@ B<This method is deprecated>, and will emit deprecation warnings.
     $bot->patrol($rcid);
 
 Marks a page or revision identified by the $rcid as patrolled. To mark several
-RCIDs as patrolled, you may pass an arrayref of them.
+RCIDs as patrolled, you may pass an arrayref of them. Returns false and sets
+C<< $bot->{error} >> if the account cannot patrol.
 
 =head2 email
 
@@ -3364,7 +3386,7 @@ patch and bug report contributors
 
 =head1 COPYRIGHT AND LICENSE
 
-This software is Copyright (c) 2011 by the MediaWiki::Bot team <perlwikibot@googlegroups.com>.
+This software is Copyright (c) 2012 by the MediaWiki::Bot team <perlwikibot@googlegroups.com>.
 
 This is free software, licensed under:
 

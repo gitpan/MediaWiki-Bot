@@ -13,7 +13,7 @@
       "patch and bug report contributors"
    ],
    "dynamic_config" : 0,
-   "generated_by" : "Dist::Zilla version 4.200015, CPAN::Meta::Converter version 2.112150",
+   "generated_by" : "Dist::Zilla version 4.300006, CPAN::Meta::Converter version 2.113640",
    "license" : [
       "gpl_3"
    ],
@@ -22,6 +22,11 @@
       "version" : "2"
    },
    "name" : "MediaWiki-Bot",
+   "no_index" : {
+      "directory" : [
+         "corpus"
+      ]
+   },
    "prereqs" : {
       "build" : {
          "requires" : {
@@ -44,7 +49,9 @@
             "LWP::Protocol::https" : "0.57",
             "MediaWiki::API" : "0.36",
             "Module::Pluggable" : 0,
-            "perl" : "5.008"
+            "perl" : "5.008",
+            "strict" : 0,
+            "warnings" : 0
          }
       },
       "test" : {
@@ -69,6 +76,6 @@
          "web" : "https://github.com/MediaWiki-Bot/MediaWiki-Bot"
       }
    },
-   "version" : "v3.4.2"
+   "version" : "3.004003"
 }
 
