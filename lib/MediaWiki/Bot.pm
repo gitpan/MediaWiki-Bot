@@ -2,7 +2,7 @@ package MediaWiki::Bot;
 use strict;
 use warnings;
 # ABSTRACT: a high-level bot framework for interacting with MediaWiki wikis
-our $VERSION = '3.004003'; # VERSION
+our $VERSION = '3.005000'; # VERSION
 
 use HTML::Entities 3.28;
 use Carp;
@@ -617,6 +617,35 @@ sub get_pages {
     return \%return;
 }
 
+
+sub get_image{
+    my $self = shift;
+    my $name = shift;
+    my $options = shift;
+
+    my %sizeparams;
+    $sizeparams{iiurlwidth} = $options->{width} if $options->{width};
+    $sizeparams{iiurlheight} = $options->{height} if $options->{height};
+
+    my $ref = $self->{api}->api({
+          action => 'query',
+          titles => $name,
+          prop   => 'imageinfo',
+          iiprop => 'url|size',
+          %sizeparams
+       } ) or return $self->_handle_api_error();
+ 
+    my ($pageref) = values %{ $ref->{query}->{pages} };
+    return unless defined $pageref->{imageinfo}; # if the image is missing
+
+    my $url = @{ $pageref->{imageinfo} }[0]->{thumburl} || @{ $pageref->{imageinfo} }[0]->{url};
+    die "$url should be absolute or something." unless ( $url =~ m{^https?://} );
+
+    my $response = $self->{api}->{ua}->get($url);
+    return $self->_handle_api_error() unless ( $response->code == 200 );
+    return $response->decoded_content;
+}
+ 
 
 sub revert {
     my $self     = shift;
@@ -1335,19 +1364,19 @@ sub expandtemplates {
     my $text = shift;
 
     unless ($text) {
+        croak q{You must provide a page title} unless $page;
         $text = $self->get_text($page);
     }
 
     my $hash = {
         action => 'expandtemplates',
-        title  => $page,
+        ( $page ? (title  => $page) : ()),
         text   => $text,
     };
     my $res = $self->{api}->api($hash);
     return $self->_handle_api_error() unless $res;
-    my $expanded = $res->{expandtemplates}->{'*'};
 
-    return $expanded;
+    return $res->{expandtemplates}->{'*'};
 }
 
 
@@ -1963,7 +1992,7 @@ sub _handle_api_error {
 sub _is_loggedin {
     my $self = shift;
 
-    my $is    = $self->_whoami();
+    my $is    = $self->_whoami() || return $self->_handle_api_error();
     my $ought = $self->{username};
     warn "Testing if logged in: we are $is, and we should be $ought" if $self->{debug} > 1;
     return ($is eq $ought);
@@ -2140,7 +2169,7 @@ MediaWiki::Bot - a high-level bot framework for interacting with MediaWiki wikis
 
 =head1 VERSION
 
-version 3.004003
+version 3.005000
 
 =head1 SYNOPSIS
 
@@ -2475,6 +2504,28 @@ aliases.
         my $text = $thing->{$page};
         print "$text\n" if defined($text);
     }
+
+=head2 get_image
+
+    $buffer = $bot->get_image('File::Foo.jpg', {width=>256, height=>256});
+
+Download an image from a wiki. This is derived from a similar function in 
+MediaWiki::API. This one allows the image to be scaled down by passing a hashref
+with height & width parameters.
+
+It returns raw data in the original format. You may simply spew it to a file, or
+process it directly with a library such as L<Imager>.
+
+    my $img_data = $bot->get_image('File::Foo.jpg');
+    use File::Slurp;
+    write_file( 'Foo.jpg', {binmode => ':raw'}, \$img_data );
+
+Images are scaled proportionally. (height/width) will remain 
+constant, except for rounding errors.
+
+Height and width parameters describe the B<maximum> dimensions. A 400x200 
+image will never be scaled to greater dimensions. You can scale it yourself;
+having the wiki do it is just lazy & selfish.
 
 =head2 revert
 
@@ -3319,12 +3370,7 @@ The project homepage is L<https://metacpan.org/module/MediaWiki::Bot>.
 
 The latest version of this module is available from the Comprehensive Perl
 Archive Network (CPAN). Visit L<http://www.perl.com/CPAN/> to find a CPAN
-site near you, or see L<http://search.cpan.org/dist/MediaWiki-Bot/>.
-
-The development version lives at L<http://github.com/MediaWiki-Bot/MediaWiki-Bot>
-and may be cloned from L<git://github.com/MediaWiki-Bot/MediaWiki-Bot.git>.
-Instead of sending patches, please fork this project using the standard
-git and github infrastructure.
+site near you, or see L<https://metacpan.org/module/MediaWiki::Bot/>.
 
 =head1 SOURCE
 
@@ -3333,10 +3379,8 @@ and may be cloned from L<git://github.com/MediaWiki-Bot/MediaWiki-Bot.git>
 
 =head1 BUGS AND LIMITATIONS
 
-No bugs have been reported.
-
-Please report any bugs or feature requests through the web interface at
-L<https://github.com/MediaWiki-Bot/MediaWiki-Bot/issues>.
+You can make new bug reports, and view existing ones, through the
+web interface at L<https://github.com/MediaWiki-Bot/MediaWiki-Bot/issues>.
 
 =head1 AUTHORS
 

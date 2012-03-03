@@ -1,5 +1,9 @@
 Changelog for MediaWiki-Bot
 
+3.005000  2012-03-03
+    * Expandtemplates will now behave correctly when the page title is omitted
+    * Better detection of login failure
+
 3.004003  2012-01-14
     * Edits may be marked as major once again
     * Don't use an invalid undefined assertion by default
