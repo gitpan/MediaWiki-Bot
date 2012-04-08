@@ -2,7 +2,7 @@ package MediaWiki::Bot;
 use strict;
 use warnings;
 # ABSTRACT: a high-level bot framework for interacting with MediaWiki wikis
-our $VERSION = '3.005000'; # VERSION
+our $VERSION = '3.005001'; # VERSION
 
 use HTML::Entities 3.28;
 use Carp;
@@ -372,27 +372,27 @@ sub edit {
     my ($edittoken, $lastedit, $tokentime) = $self->_get_edittoken($page);
     return $self->_handle_api_error() unless $edittoken;
 
+    # HTTP::Message will do this eventually as of 6.03  (RT#75592), so we need
+    # to do it here - otherwise, the md5 won't match what eventually is sent to
+    # the server, and the edit will fail - GH#39.
+    # If HTTP::Message becomes unbroken in the future, might have to keep this
+    # workaround for people using 6.03 and other future broken versions.
+    $text =~ s{(?<!\r)\n}{\r\n}g;
+    my $md5 = md5_hex(encode_utf8($text)); # Pass only bytes to md5_hex()
     my $hash = {
         action         => 'edit',
         title          => $page,
         token          => $edittoken,
         text           => $text,
-        md5            => md5_hex(encode_utf8($text)),    # Guard against data corruption
-                                                          # Pass only bytes to md5_hex()
+        md5            => $md5,             # Guard against data corruption
         summary        => $summary,
-        basetimestamp  => $lastedit,                      # Guard against edit conflicts
-        starttimestamp => $tokentime,                     # Guard against the page being deleted/moved
+        basetimestamp  => $lastedit,        # Guard against edit conflicts
+        starttimestamp => $tokentime,       # Guard against the page being deleted/moved
         bot            => $markasbot,
-        section        => $section,
-        ( $assert ? (assert => $assert) : ()),
+        ( $section  ? (section => $section) : ()),
+        ( $assert   ? (assert => $assert)   : ()),
+        ( $is_minor ? (minor => 1)          : (notminor => 1)),
     };
-    if ($is_minor) {
-        $hash->{minor} = 1;
-    }
-    else {
-        $hash->{notminor} = 1;
-    }
-    delete $hash->{section} unless defined($section);
 
     my $res = $self->{api}->api($hash);
     return $self->_handle_api_error() unless $res;
@@ -2169,7 +2169,7 @@ MediaWiki::Bot - a high-level bot framework for interacting with MediaWiki wikis
 
 =head1 VERSION
 
-version 3.005000
+version 3.005001
 
 =head1 SYNOPSIS
 
@@ -2393,15 +2393,23 @@ This method edits a wiki page, and takes a hashref of data with keys:
 
 =item *
 
+I<page> - the page title to edit
+
+=item *
+
+I<text> - the page text to write
+
+=item *
+
 I<summary> - an edit summary
 
 =item *
 
-I<minor> - whether to mark the edit as minor
+I<minor> - whether to mark the edit as minor or not (boolean)
 
 =item *
 
-I<bot> - whether to mark the edit as a bot edit
+I<bot> - whether to mark the edit as a bot edit (boolean)
 
 =item *
 
@@ -2409,7 +2417,7 @@ I<assertion> - usually 'bot', but see L<http://mediawiki.org/wiki/Extension:Asse
 
 =item *
 
-I<section> - edit a single section instead of the whole page
+I<section> - edit a single section (identified by number) instead of the whole page
 
 =back
 

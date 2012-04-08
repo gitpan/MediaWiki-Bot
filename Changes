@@ -1,5 +1,9 @@
 Changelog for MediaWiki-Bot
 
+3.005001  2012-04-08
+    * Fixed erroneous documentation on the edit method
+    * Fixed edit failures due to changes in HTTP::Message 6.03 (GH#39)
+
 3.005000  2012-03-03
     * Expandtemplates will now behave correctly when the page title is omitted
     * Better detection of login failure

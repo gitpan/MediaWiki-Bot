@@ -20,29 +20,32 @@ my $bot   = MediaWiki::Bot->new({
 });
 
 my $title = 'User:Mike.lifeguard/05-revert.t';
-{   # Exercise revert()
-    my @history = $bot->get_history($title, 10);
-    my $revid = $history[9]->{revid};
+SKIP: {
+    {   # Exercise revert()
+        my @history = $bot->get_history($title, 10);
+        my $revid = $history[ int( rand() * 10) ]->{revid};
 
-    my $text = $bot->get_text($title, $revid);
-    my $res = $bot->revert($title, $revid, $agent);
+        my $text = $bot->get_text($title, $revid);
+        my $res = $bot->revert($title, $revid, $agent);
+        my $err = $bot->{error};
 
-    skip 'You are blocked, cannot proceed with editing tests', 2 if
-        defined $bot->{error}->{code} and $bot->{error}->{code} == 3;
+        skip 'Cannot use editing tests: ' . $bot->{error}->{details}, 2 if
+            defined $bot->{error}->{code} and $bot->{error}->{code} == 3;
 
-    my $newtext = $bot->get_text($title);
+        my $newtext = $bot->get_text($title);
 
-    is($text, $newtext, 'Reverted successfully');
-}
+        is $text, $newtext, 'Reverted successfully';
+    }
 
-$bot->purge_page($title);
+    $bot->purge_page($title);
 
-{   # Exercise undo()
-    my @history = $bot->get_history($title, 2);
-    my $revid   = $history[0]->{revid};
-    my $text    = $bot->get_text($title, $history[1]->{revid});
-    $bot->undo($title, $revid);
-    my $newtext = $bot->get_text($title);
+    {   # Exercise undo()
+        my @history = $bot->get_history($title, 2);
+        my $revid   = $history[0]->{revid};
+        my $text    = $bot->get_text($title, $history[1]->{revid});
+        $bot->undo($title, $revid);
+        my $newtext = $bot->get_text($title);
 
-    is($text, $newtext, 'Undo was successful');
+        is $text, $newtext, 'Undo was successful';
+    }
 }
