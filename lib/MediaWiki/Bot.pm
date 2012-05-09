@@ -2,7 +2,7 @@ package MediaWiki::Bot;
 use strict;
 use warnings;
 # ABSTRACT: a high-level bot framework for interacting with MediaWiki wikis
-our $VERSION = '3.005001'; # VERSION
+our $VERSION = '3.005002'; # VERSION
 
 use HTML::Entities 3.28;
 use Carp;
@@ -2169,7 +2169,7 @@ MediaWiki::Bot - a high-level bot framework for interacting with MediaWiki wikis
 
 =head1 VERSION
 
-version 3.005001
+version 3.005002
 
 =head1 SYNOPSIS
 
@@ -2198,7 +2198,7 @@ with the MediaWiki API (L<http://en.wikipedia.org/w/api.php>).
         host    => 'en.wikipedia.org',
     });
 
-Calling C<<MediaWiki::Bot->new()>> will create a new MediaWiki::Bot object. The
+Calling C<< MediaWiki::Bot->new() >> will create a new MediaWiki::Bot object. The
 only parameter is a hashref with keys:
 
 =over 4

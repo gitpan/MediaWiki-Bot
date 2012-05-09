@@ -47,4 +47,4 @@ resources:
   bugtracker: https://github.com/MediaWiki-Bot/MediaWiki-Bot/issues
   homepage: https://metacpan.org/module/MediaWiki::Bot
   repository: git://github.com/MediaWiki-Bot/MediaWiki-Bot.git
-version: 3.005001
+version: 3.005002
