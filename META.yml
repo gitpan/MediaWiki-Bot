@@ -13,16 +13,17 @@ author:
   - 'patch and bug report contributors'
 build_requires:
   File::Find: 0
+  File::Spec: 0
   File::Temp: 0
   Module::Build: 0.3601
   Test::More: 0.96
+  Test::NoWarnings: 0
   Test::Warn: 0
   utf8: 0
 configure_requires:
-  ExtUtils::MakeMaker: 6.30
   Module::Build: 0.3601
 dynamic_config: 0
-generated_by: 'Dist::Zilla version 4.300012, CPAN::Meta::Converter version 2.120900'
+generated_by: 'Dist::Zilla version 4.300006, CPAN::Meta::Converter version 2.113640'
 license: gpl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -31,6 +32,8 @@ name: MediaWiki-Bot
 no_index:
   directory:
     - corpus
+    - inc
+    - examples
 requires:
   Carp: 0
   Digest::MD5: 2.39
@@ -44,7 +47,5 @@ requires:
   strict: 0
   warnings: 0
 resources:
-  bugtracker: https://github.com/MediaWiki-Bot/MediaWiki-Bot/issues
-  homepage: https://metacpan.org/module/MediaWiki::Bot
-  repository: git://github.com/MediaWiki-Bot/MediaWiki-Bot.git
-version: 3.005002
+  repository: git://github.com/doherty/MediaWiki-Bot.git
+version: 5.005003

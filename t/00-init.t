@@ -23,7 +23,7 @@ Thanks for using MediaWiki::Bot. If any of these
 tests fail, or you need any other assistance with
 the module, please email our support mailing list
 at perlwikibot@googlegroups.com, or submit a bug
-to our tracker http://goo.gl/E1wMT on github.
+to our tracker on github: http://goo.gl/5Ns48
 END
     if (!defined($ENV{'PWPUsername'}) and !defined($ENV{'PWPPassword'})) {
         diag <<'END';
@@ -79,4 +79,3 @@ subtest 'no assert' => sub {
     });
     ok( not exists $bot->{assert} ) or diag explain $bot;
 };
-

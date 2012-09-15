@@ -2,7 +2,7 @@ package MediaWiki::Bot;
 use strict;
 use warnings;
 # ABSTRACT: a high-level bot framework for interacting with MediaWiki wikis
-our $VERSION = '3.005002'; # VERSION
+our $VERSION = '5.005003'; # VERSION
 
 use HTML::Entities 3.28;
 use Carp;
@@ -634,7 +634,7 @@ sub get_image{
           iiprop => 'url|size',
           %sizeparams
        } ) or return $self->_handle_api_error();
- 
+
     my ($pageref) = values %{ $ref->{query}->{pages} };
     return unless defined $pageref->{imageinfo}; # if the image is missing
 
@@ -645,7 +645,7 @@ sub get_image{
     return $self->_handle_api_error() unless ( $response->code == 200 );
     return $response->decoded_content;
 }
- 
+
 
 sub revert {
     my $self     = shift;
@@ -788,7 +788,7 @@ sub what_links_here {
         bltitle     => $page,
         bllimit     => 'max',
     };
-    $hash->{blnamespace}   = $ns if $ns;
+    $hash->{blnamespace}   = $ns if defined $ns;
     $hash->{blfilterredir} = $filter if $filter;
     $options->{max} = 1 unless $options->{max};
 
@@ -826,7 +826,7 @@ sub list_transclusions {
         eilimit     => 'max',
     };
     $hash->{eifilterredir} = $filter if $filter;
-    $hash->{einamespace}   = $ns if $ns;
+    $hash->{einamespace}   = $ns if defined $ns;
     $options->{max} = 1 unless $options->{max};
 
     my $res = $self->{api}->list($hash, $options);
@@ -941,7 +941,7 @@ sub linksearch {
         euquery     => $link,
         eulimit     => 'max',
     };
-    $hash->{eunamespace} = $ns if $ns;
+    $hash->{eunamespace} = $ns if defined $ns;
     $hash->{euprotocol}  = $prot if $prot;
     $options->{max} = 1 unless $options->{max};
 
@@ -1031,7 +1031,7 @@ sub image_usage {
         iutitle         => $image,
         iulimit         => 'max',
     };
-    $hash->{iunamespace} = $ns if $ns;
+    $hash->{iunamespace} = $ns if defined $ns;
     if (defined($filter) and $filter =~ m/(all|redirects|nonredirects)/) {
         $hash->{'iufilterredir'} = $1;
     }
@@ -1504,7 +1504,7 @@ sub prefixindex {
         $filter = $1;
     }
 
-    if (!$ns && $prefix =~ m/:/) {
+    if (!defined $ns && $prefix =~ m/:/) {
         print STDERR "Converted '$prefix' to..." if $self->{debug} > 1;
         my ($name) = split(/:/, $prefix, 2);
         my $ns_data = $self->_get_ns_data();
@@ -1519,7 +1519,7 @@ sub prefixindex {
         apprefix => $prefix,
         aplimit  => 'max',
     };
-    $hash->{apnamespace}   = $ns     if $ns;
+    $hash->{apnamespace}   = $ns     if defined $ns;
     $hash->{apfilterredir} = $filter if $filter;
     $options->{max} = 1 unless $options->{max};
 
@@ -1583,9 +1583,11 @@ sub get_log {
     my $user     = $data->{user};
     my $target   = $data->{target};
 
-    my $ns_data      = $self->_get_ns_data();
-    my $user_ns_name = $ns_data->{2};
-    $user =~ s/^$user_ns_name://;
+    if ($user) {
+        my $ns_data      = $self->_get_ns_data();
+        my $user_ns_name = $ns_data->{2};
+        $user =~ s/^$user_ns_name://;
+    }
 
     my $hash = {
         action  => 'query',
@@ -1849,7 +1851,7 @@ sub top_edits {
         ucprop  => 'title|flags',
         uclimit => 'max',
     }, $options);
-    return _handle_api_error() unless $res;
+    return $self->_handle_api_error() unless $res;
     return 1 if (!ref $res);    # Not a ref when using callback
 
     my @titles;
@@ -1882,7 +1884,7 @@ sub contributions {
         ucprop      => 'ids|title|timestamp|comment|flags',
         uclimit     => 'max',
     }, $opts);
-    return _handle_api_error() unless $res->[0];
+    return $self->_handle_api_error() unless $res->[0];
     return 1 if (!ref $res->[0]); # Not a ref when using callback
 
     return $res->[0]; # Can we make this more useful?
@@ -1900,6 +1902,7 @@ sub upload {
     unless (defined $data) {
         $self->{error}->{code} = 6;
         $self->{error}->{details} = q{You must provide either file contents or a filename.};
+        return undef;
     }
     unless (defined $args->{file} or defined $args->{title}) {
         $self->{error}->{code} = 6;
@@ -1913,7 +1916,7 @@ sub upload {
         filename => $filename,
         comment  => $args->{summary},
         file     => [ undef, $filename, Content => $data ],
-    });
+    }) || return $self->_handle_api_error();
     return $success;
 }
 
@@ -2169,7 +2172,7 @@ MediaWiki::Bot - a high-level bot framework for interacting with MediaWiki wikis
 
 =head1 VERSION
 
-version 3.005002
+version 5.005003
 
 =head1 SYNOPSIS
 
@@ -2517,7 +2520,7 @@ aliases.
 
     $buffer = $bot->get_image('File::Foo.jpg', {width=>256, height=>256});
 
-Download an image from a wiki. This is derived from a similar function in 
+Download an image from a wiki. This is derived from a similar function in
 MediaWiki::API. This one allows the image to be scaled down by passing a hashref
 with height & width parameters.
 
@@ -2528,10 +2531,10 @@ process it directly with a library such as L<Imager>.
     use File::Slurp;
     write_file( 'Foo.jpg', {binmode => ':raw'}, \$img_data );
 
-Images are scaled proportionally. (height/width) will remain 
+Images are scaled proportionally. (height/width) will remain
 constant, except for rounding errors.
 
-Height and width parameters describe the B<maximum> dimensions. A 400x200 
+Height and width parameters describe the B<maximum> dimensions. A 400x200
 image will never be scaled to greater dimensions. You can scale it yourself;
 having the wiki do it is just lazy & selfish.
 
@@ -3374,21 +3377,19 @@ data is stored in C<< $bot->{error}->{code} >> and C<< $bot->{error}->{details} 
 
 =head1 AVAILABILITY
 
-The project homepage is L<https://metacpan.org/module/MediaWiki::Bot>.
-
 The latest version of this module is available from the Comprehensive Perl
 Archive Network (CPAN). Visit L<http://www.perl.com/CPAN/> to find a CPAN
 site near you, or see L<https://metacpan.org/module/MediaWiki::Bot/>.
 
 =head1 SOURCE
 
-The development version is on github at L<http://github.com/MediaWiki-Bot/MediaWiki-Bot>
-and may be cloned from L<git://github.com/MediaWiki-Bot/MediaWiki-Bot.git>
+The development version is on github at L<http://github.com/doherty/MediaWiki-Bot>
+and may be cloned from L<git://github.com/doherty/MediaWiki-Bot.git>
 
 =head1 BUGS AND LIMITATIONS
 
 You can make new bug reports, and view existing ones, through the
-web interface at L<https://github.com/MediaWiki-Bot/MediaWiki-Bot/issues>.
+web interface at L<http://rt.cpan.org>.
 
 =head1 AUTHORS
 
