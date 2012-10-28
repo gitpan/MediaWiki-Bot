@@ -2,7 +2,7 @@ package MediaWiki::Bot;
 use strict;
 use warnings;
 # ABSTRACT: a high-level bot framework for interacting with MediaWiki wikis
-our $VERSION = '5.005003'; # VERSION
+our $VERSION = '5.005004'; # VERSION
 
 use HTML::Entities 3.28;
 use Carp;
@@ -228,6 +228,9 @@ sub login {
     }) or return $self->_handle_api_error();
     $self->{api}->{ua}->{cookie_jar}->extract_cookies($self->{api}->{response});
     $self->{api}->{ua}->{cookie_jar}->save($cookies) if (-w($cookies) or -w('.'));
+
+    return $self->_handle_api_error() unless $res->{login};
+    return $self->_handle_api_error() unless $res->{login}->{result};
 
     if ($res->{login}->{result} eq 'NeedToken') {
         my $token = $res->{login}->{token};
@@ -633,8 +636,8 @@ sub get_image{
           prop   => 'imageinfo',
           iiprop => 'url|size',
           %sizeparams
-       } ) or return $self->_handle_api_error();
-
+    });
+    return $self->_handle_api_error() unless $ref;
     my ($pageref) = values %{ $ref->{query}->{pages} };
     return unless defined $pageref->{imageinfo}; # if the image is missing
 
@@ -1202,7 +1205,6 @@ sub test_image_exists {
         }
     }
 
-    # use Data::Dumper; print STDERR Dumper(\@return) and die;
     return \@return;
 }
 
@@ -1225,11 +1227,7 @@ sub get_pages_in_namespace {
     my $res = $self->{api}->list($hash, $options);
     return $self->_handle_api_error() unless $res;
     return 1 if (!ref $res); # Not a ref when using callback
-    my @return;
-    foreach (@{$res}) {
-        push @return, $_->{title};
-    }
-    return @return;
+    return map { $_->{title} } @$res;
 }
 
 
@@ -1869,25 +1867,31 @@ sub contributions {
     my $ns   = shift;
     my $opts = shift;
 
-    $user =~ s/^User://;
-
-    $ns = join('|', @$ns) if (ref $ns eq 'ARRAY');
+    if (ref $user eq 'ARRAY') {
+        $user = join '|', map { my $u = $_; $u =~ s{^User:}{}; $u } @$user;
+    }
+    else {
+        $user =~ s{^User:}{};
+    }
+    $ns = join '|', @$ns
+        if ref $ns eq 'ARRAY';
 
     $opts->{max} = 1 unless defined($opts->{max});
     delete($opts->{max}) if $opts->{max} == 0;
 
-    my $res = $self->{api}->list({
+    my $query = {
         action      => 'query',
         list        => 'usercontribs',
         ucuser      => $user,
-        ucnamespace => $ns,
+        ( defined $ns ? (ucnamespace => $ns) : ()),
         ucprop      => 'ids|title|timestamp|comment|flags',
         uclimit     => 'max',
-    }, $opts);
+    };
+    my $res = $self->{api}->list($query, $opts);
     return $self->_handle_api_error() unless $res->[0];
-    return 1 if (!ref $res->[0]); # Not a ref when using callback
+    return 1 if (!ref $res); # Not a ref when using callback
 
-    return $res->[0]; # Can we make this more useful?
+    return @$res;
 }
 
 
@@ -2023,6 +2027,9 @@ sub _do_autoconfig {
     };
     my $res = $self->{api}->api($hash);
     return $self->_handle_api_error() unless $res;
+    return $self->_handle_api_error() unless  $res->{query};
+    return $self->_handle_api_error() unless  $res->{query}->{userinfo};
+    return $self->_handle_api_error() unless  $res->{query}->{userinfo}->{name};
 
     my $is    = $res->{query}->{userinfo}->{name};
     my $ought = $self->{username};
@@ -2030,7 +2037,7 @@ sub _do_autoconfig {
     # Should we try to recover by logging in again? croak?
     carp "We're logged in as $is but we should be logged in as $ought" if ($is ne $ought);
 
-    my @rights            = @{ $res->{query}->{userinfo}->{rights} };
+    my @rights            = @{ $res->{query}->{userinfo}->{rights} || [] };
     my $has_bot           = 0;
     my $default_assert    = 'user';                                           # At a *minimum*, the bot should be logged in.
     foreach my $right (@rights) {
@@ -2040,7 +2047,7 @@ sub _do_autoconfig {
         }
     }
 
-    my @groups   = @{ $res->{query}->{userinfo}->{groups} };
+    my @groups = @{ $res->{query}->{userinfo}->{groups} || [] }; # anon arrayref in case there are no groups
     my $is_sysop = 0;
     foreach my $group (@groups) {
         if ($group eq 'sysop') {
@@ -2063,8 +2070,6 @@ sub _get_sitematrix {
     return $self->_handle_api_error() unless $res;
     my %sitematrix = %{ $res->{sitematrix} };
 
-#    use Data::Dumper;
-#    print STDERR Dumper(\%sitematrix) and die;
     # This hash is a monstrosity (see http://sprunge.us/dfBD?pl), and needs
     # lots of post-processing to have a sane data structure :\
     my %by_db;
@@ -2121,8 +2126,7 @@ sub _get_sitematrix {
     # method, if mtime is less than, say, 14d, you could load it from
     # disk instead of over network.
     $self->{sitematrix} = \%by_db;
-#    use Data::Dumper;
-#    print STDERR Dumper($self->{'sitematrix'}) and die;
+
     return $self->{sitematrix};
 }
 
@@ -2172,7 +2176,7 @@ MediaWiki::Bot - a high-level bot framework for interacting with MediaWiki wikis
 
 =head1 VERSION
 
-version 5.005003
+version 5.005004
 
 =head1 SYNOPSIS
 
@@ -2521,14 +2525,14 @@ aliases.
     $buffer = $bot->get_image('File::Foo.jpg', {width=>256, height=>256});
 
 Download an image from a wiki. This is derived from a similar function in
-MediaWiki::API. This one allows the image to be scaled down by passing a hashref
+L<MediaWiki::API>. This one allows the image to be scaled down by passing a hashref
 with height & width parameters.
 
 It returns raw data in the original format. You may simply spew it to a file, or
 process it directly with a library such as L<Imager>.
 
+    use File::Slurp qw(write_file);
     my $img_data = $bot->get_image('File::Foo.jpg');
-    use File::Slurp;
     write_file( 'Foo.jpg', {binmode => ':raw'}, \$img_data );
 
 Images are scaled proportionally. (height/width) will remain
@@ -3303,10 +3307,12 @@ callback if you I<check> that it is a top edit:
 
 =head2 contributions
 
-    my @contribs = $bot->contributions($user, $namespace);
+    my @contribs = $bot->contributions($user, $namespace, $options);
 
 Returns an array of hashrefs of data for the user's contributions. $ns can be an
 arrayref of namespace numbers. $options can be specified as in L</linksearch>.
+
+Specify an arrayref of users to get results for multiple users.
 
 =head2 upload
 

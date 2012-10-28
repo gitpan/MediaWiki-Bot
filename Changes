@@ -1,5 +1,8 @@
 Changelog for MediaWiki-Bot
 
+5.005004  2012-10-27
+    * More robust error-checking in some cases (GH#45, James DuPont)
+
 5.005003  2012-09-14
     * Be more liberal with matching whitespace in the diff test
     * Correctly handle namespace #0 (GH#43, thanks Seth!)
