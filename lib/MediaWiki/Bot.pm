@@ -2,13 +2,14 @@ package MediaWiki::Bot;
 use strict;
 use warnings;
 # ABSTRACT: a high-level bot framework for interacting with MediaWiki wikis
-our $VERSION = '5.005004'; # VERSION
+our $VERSION = '5.005005'; # VERSION
 
 use HTML::Entities 3.28;
 use Carp;
 use Digest::MD5 2.39 qw(md5_hex);
 use Encode qw(encode_utf8);
 use MediaWiki::API 0.36;
+use List::Util qw(sum);
 
 use Module::Pluggable search_path => [qw(MediaWiki::Bot::Plugin)], 'require' => 1;
 foreach my $plugin (__PACKAGE__->plugins) {
@@ -193,9 +194,12 @@ sub login {
             $basic_auth->{pass}
         );
     }
-    $do_sul = 0 if (
-        ($self->{protocol} eq 'https') and
-        ($self->{host} eq 'secure.wikimedia.org') );
+
+    if ($self->{host} eq 'secure.wikimedia.org') {
+        warnings::warnif('deprecated', 'SSL is now supported on the main Wikimedia Foundation sites. '
+            . 'Use en.wikipedia.org (or whatever) instead of secure.wikimedia.org.');
+        return;
+    }
 
     if($do_sul) {
         my $sul_success = $self->_do_sul($password);
@@ -308,9 +312,7 @@ sub _do_sul {
         path     => $path,
     });
 
-    my $sum = 0;
-    no warnings qw(uninitialized);
-    $sum += $_ for @logins;
+    my $sum = sum 0, @logins;
     my $total = scalar @WMF_projects;
     warn "$sum/$total logins succeeded" if $debug > 1;
     $self->{debug} = $debug; # Reset debug to it's old value
@@ -750,10 +752,36 @@ sub update_rc {
 
 
 sub recentchanges {
-    my $self    = shift;
-    my $ns      = shift || 0;
-    my $limit   = defined($_[0]) ? shift : 50;
-    my $options = shift;
+    my $self = shift;
+    my $ns;
+    my $limit;
+    my $options;
+    my $user;
+    my $show;
+    if (ref $_[0] eq 'HASH') { # unpack for new args
+        my %args = %{ +shift };
+        $ns     = delete $args{ns};
+        $limit  = delete $args{limit};
+        $user   = delete $args{user};
+
+        if (ref $args{show} eq 'HASH') {
+            my @show;
+            while (my ($k, $v) = each %{ $args{show} }) {
+                push @show, '!'x!$v . $k;
+            }
+            $show = join '|', @show;
+        }
+        else {
+            $show = delete $args{show};
+        }
+
+        $options = shift;
+    }
+    else {
+        $ns      = shift || 0;
+        $limit   = shift || 50;
+        $options = shift;
+    }
     $ns = join('|', @$ns) if ref $ns eq 'ARRAY';
 
     my $hash = {
@@ -763,10 +791,13 @@ sub recentchanges {
         rclimit     => $limit,
         rcprop      => 'user|comment|timestamp|title|ids',
     };
+    $hash->{rcuser} = $user if defined $user;
+    $hash->{rcshow} = $show if defined $show;
+
     $options->{max} = 1 unless $options->{max};
 
-    my $res = $self->{api}->list($hash, $options);
-    return $self->_handle_api_error() unless $res;
+    my $res = $self->{api}->list($hash, $options)
+        or return $self->_handle_api_error();
     return 1 unless ref $res;    # Not a ref when using callback
     return @$res;
 }
@@ -1248,6 +1279,23 @@ sub count_contributions {
 }
 
 
+sub timed_count_contributions {
+    my $self     = shift;
+    my $username = shift;
+    my $days     = shift;
+    $username =~ s/User://i;    # Strip namespace
+
+    my $res = $self->{api}->api({
+            action  => 'userdailycontribs',
+            user    => $username,
+            daysago => $days,
+        },
+        { max => 1 });
+    return $self->_handle_api_error() unless $res;
+    return ($res->{userdailycontribs}->{timeFrameEdits}, $res->{userdailycontribs}->{totalEdits});
+}
+
+
 sub last_active {
     my $self     = shift;
     my $username = shift;
@@ -1615,7 +1663,9 @@ sub is_g_blocked {
             list    => 'globalblocks',
             bglimit => 1,
             bgprop  => 'address',
-            bgip    => $ip,              # So handy! It searches for blocks affecting this IP or IP range, including rangeblocks! Can't get that from UI.
+            # So handy! It searches for blocks affecting this IP or IP range,
+            # including rangeblocks! Can't get that from UI.
+            bgip    => $ip,
     });
     return $self->_handle_api_error() unless $res;
     return 0 unless ($res->{query}->{globalblocks}->[0]);
@@ -1630,26 +1680,19 @@ sub was_g_blocked {
     $ip =~ s/User://i; # Strip User: prefix, if present
 
     # This query should always go to Meta
-    unless ($self->{api}->{config}->{api_url} =~
-        m,
-            http://meta.wikimedia.org/w/api.php
-                |
-            https://secure.wikimedia.org/wikipedia/meta/w/api.php
-        ,x # /x flag is pretty awesome :)
-        ) {
+    unless ( $self->{host} eq 'meta.wikimedia.org' ) {
         carp "GlobalBlocking queries should probably be sent to Meta; it doesn't look like you're doing so" if $self->{debug};
     }
 
     # http://meta.wikimedia.org/w/api.php?action=query&list=logevents&letype=gblblock&letitle=User:127.0.0.1&lelimit=1&leprop=ids
-    my $hash = {
+    my $res = $self->{api}->api({
         action  => 'query',
         list    => 'logevents',
         letype  => 'gblblock',
         letitle => "User:$ip",    # Ensure the User: prefix is there!
         lelimit => 1,
         leprop  => 'ids',
-    };
-    my $res = $self->{api}->api($hash);
+    });
 
     return $self->_handle_api_error() unless $res;
     my $number = scalar @{ $res->{query}->{logevents} };    # The number of blocks returned
@@ -1661,6 +1704,7 @@ sub was_g_blocked {
         return 0;
     }
     else {
+        warn "Got multiple results for $ip unexpectedly";
         return; # UNPOSSIBLE!
     }
 }
@@ -1925,6 +1969,33 @@ sub upload {
 }
 
 
+sub upload_from_url {
+    my $self = shift;
+    my $args = shift;
+
+    my $url  = delete $args->{url};
+    unless (defined $url) {
+        $self->{error}->{code} = 6;
+        $self->{error}->{details} = q{You must provide URL of file to upload.};
+        return undef;
+    }
+
+    my $filename = $args->{title} || do {
+        require File::Basename;
+        File::Basename::basename($url)
+    };
+    my $success = $self->{api}->edit({
+        action   => 'upload',
+        filename => $filename,
+        comment  => $args->{summary},
+        url      => $url,
+        ignorewarnings => 1,
+    }) || return $self->_handle_api_error();
+    return $success;
+}
+
+
+
 sub usergroups {
     my $self = shift;
     my $user = shift;
@@ -2166,6 +2237,7 @@ sub _get_ns_alias_data {
 1;
 
 __END__
+
 =pod
 
 =encoding utf-8
@@ -2176,7 +2248,7 @@ MediaWiki::Bot - a high-level bot framework for interacting with MediaWiki wikis
 
 =head1 VERSION
 
-version 5.005004
+version 5.005005
 
 =head1 SYNOPSIS
 
@@ -2601,62 +2673,37 @@ The L</"Options hashref"> is also available:
         }
     }
 
-=head2 recentchanges($ns, $limit, $options_hashref)
+=head2 recentchanges($wiki_hashref, $options_hashref)
 
-Returns an array of hashrefs containing recentchanges data for the specified
-namespace number. If specified, the second parameter is the number of rows to
-fetch, and an $options_hashref can be used.
+Returns an array of hashrefs containing recentchanges data.
 
-The hashref returned might contain the following keys:
+The first parameter is a hashref with the following keys:
 
 =over 4
 
-=item *
+=item I<ns> - the namespace number, or an arrayref of numbers to
+specify several; default is the main namespace
 
-I<ns> - the namespace number
+=item I<limit> - the number of rows to fetch; default is 50
 
-=item *
+=item I<user> - only list changes by this user
 
-I<revid>
-
-=item *
-
-I<old_revid>
-
-=item *
-
-I<timestamp>
-
-=item *
-
-I<rcid> - can be used with C<patrol()>
-
-=item *
-
-I<pageid>
-
-=item *
-
-I<type> - one of edit, new, log (there may be others)
-
-=item *
-
-I<title>
+=item I<show> - itself a hashref where the key is a category and the value is
+a boolean. If true, the category will be included; if false, excluded. The
+categories are kinds of edits: minor, bot, anon, redirect, patrolled. See
+"rcshow" at L<http://www.mediawiki.org/wiki/API:Recentchanges#Parameters>.
 
 =back
 
-By default, the main namespace is used, and limit is set to 50. Pass an
-arrayref of namespace numbers to get results from several namespaces.
+An L</"Options hashref"> can be used as the second parameter:
 
-The L</"Options hashref">:
-
-    my @rc = $bot->recentchanges(4, 10);
+    my @rc = $bot->recentchanges({ ns => 4, limit => 100 });
     foreach my $hashref (@rc) {
         print $hashref->{title} . "\n";
     }
 
     # Or, use a callback for incremental processing:
-    $bot->recentchanges(0, 500, { hook => \&mysub });
+    $bot->recentchanges({ ns => [0,1], limit => 500 }, { hook => \&mysub });
     sub mysub {
         my ($res) = @_;
         foreach my $hashref (@$res) {
@@ -2664,6 +2711,33 @@ The L</"Options hashref">:
             print "$page\n";
         }
     }
+
+The hashref returned might contain the following keys:
+
+=over 4
+
+=item I<ns> - the namespace number
+
+=item I<revid>
+
+=item I<old_revid>
+
+=item I<timestamp>
+
+=item I<rcid> - can be used with L</patrol>
+
+=item I<pageid>
+
+=item I<type> - one of edit, new, log (there may be others)
+
+=item I<title>
+
+=back
+
+For backwards compatibility, the previous method signature is still
+supported:
+
+    $bot->recentchanges($ns, $limit, $options_hashref);
 
 =head2 what_links_here
 
@@ -2990,6 +3064,25 @@ retrieve multiple sets of results:
     my $count = $bot->count_contributions($user);
 
 Uses the API to count $user's contributions.
+
+=head2 timed_count_contributions
+
+    ($timed_edits_count, $total_count) = $bot->timed_count_contributions($user, $days);
+
+Uses the API to count $user's contributions in last number of $days and total number of user's contributions (if needed).
+
+Example: If you want to get user contribs for last 30 and 365 days, and total number of edits you would write
+something like this:
+
+    my ($last30days, $total) = $bot->timed_count_contributions($user, 30);
+    my $last365days = $bot->timed_count_contributions($user, 365);
+
+You could get total number of edits also by separately calling count_contributions like this:
+
+    my $total = $bot->count_contributions($user);
+
+and use timed_count_contributions only in scalar context, but that would mean one more call to server (meaning more
+server load) of which you are excused as timed_count_contributions returns array with two parameters.
 
 =head2 last_active
 
@@ -3322,6 +3415,15 @@ Specify an arrayref of users to get results for multiple users.
 Upload a file to the wiki. Specify the file by either giving the filename, which
 will be read in, or by giving the data directly.
 
+=head2 upload_from_url
+
+Upload file directly from URL to the wiki. Specify URL, the new filename and summary. Summary and new filename are optional.
+
+    $bot->upload_from_url({ url => 'http://some.domain.ext/pic.png', title => 'Target_filename.png', summary => 'uploading new pic' });
+
+If on your target wiki is enabled uploading from URL, meaning $wgAllowCopyUploads is set to true in LocalSettings.php and you have
+appropriate user rights, you can use this function to upload files to your wiki directly from remote server.
+
 =head2 usergroups
 
 Returns a list of the usergroups a user is in:
@@ -3383,19 +3485,21 @@ data is stored in C<< $bot->{error}->{code} >> and C<< $bot->{error}->{details} 
 
 =head1 AVAILABILITY
 
+The project homepage is L<https://metacpan.org/module/MediaWiki::Bot>.
+
 The latest version of this module is available from the Comprehensive Perl
 Archive Network (CPAN). Visit L<http://www.perl.com/CPAN/> to find a CPAN
 site near you, or see L<https://metacpan.org/module/MediaWiki::Bot/>.
 
 =head1 SOURCE
 
-The development version is on github at L<http://github.com/doherty/MediaWiki-Bot>
-and may be cloned from L<git://github.com/doherty/MediaWiki-Bot.git>
+The development version is on github at L<http://github.com/MediaWiki-Bot/MediaWiki-Bot>
+and may be cloned from L<git://github.com/MediaWiki-Bot/MediaWiki-Bot.git>
 
 =head1 BUGS AND LIMITATIONS
 
 You can make new bug reports, and view existing ones, through the
-web interface at L<http://rt.cpan.org>.
+web interface at L<https://github.com/MediaWiki-Bot/MediaWiki-Bot/issues>.
 
 =head1 AUTHORS
 
@@ -3445,11 +3549,10 @@ patch and bug report contributors
 
 =head1 COPYRIGHT AND LICENSE
 
-This software is Copyright (c) 2012 by the MediaWiki::Bot team <perlwikibot@googlegroups.com>.
+This software is Copyright (c) 2013 by the MediaWiki::Bot team <perlwikibot@googlegroups.com>.
 
 This is free software, licensed under:
 
   The GNU General Public License, Version 3, June 2007
 
 =cut
-
