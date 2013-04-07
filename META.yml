@@ -23,7 +23,7 @@ build_requires:
 configure_requires:
   Module::Build: 0.3601
 dynamic_config: 0
-generated_by: 'Dist::Zilla version 4.300031, CPAN::Meta::Converter version 2.120921'
+generated_by: 'Dist::Zilla version 4.300032, CPAN::Meta::Converter version 2.130880'
 license: gpl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -51,4 +51,4 @@ resources:
   bugtracker: https://github.com/MediaWiki-Bot/MediaWiki-Bot/issues
   homepage: https://metacpan.org/module/MediaWiki::Bot
   repository: git://github.com/MediaWiki-Bot/MediaWiki-Bot.git
-version: 5.005005
+version: 5.005006
