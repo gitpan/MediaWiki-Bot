@@ -20,32 +20,28 @@ my $bot   = MediaWiki::Bot->new({
 });
 
 my $title = 'User:Mike.lifeguard/05-revert.t';
-SKIP: {
-    {   # Exercise revert()
-        my @history = $bot->get_history($title, 10);
-        my $revid = $history[ int( rand() * 10) ]->{revid};
 
-        my $text = $bot->get_text($title, $revid);
-        my $res = $bot->revert($title, $revid, $agent);
-        my $err = $bot->{error};
+subtest revert => sub {
+    my @history = $bot->get_history($title, 20);
+    my $oldrevid = $history[ int( rand() * 20 ) ]->{revid};
+    my $res = $bot->revert($title, $oldrevid, $agent);
+    plan defined $bot->{error}->{code} && $bot->{error}->{code} == 3
+        ? (skip_all => q{Can't use editing tests: } . $bot->{error}->{details})
+        : (tests => 1);
 
-        skip 'Cannot use editing tests: ' . $bot->{error}->{details}, 2 if
-            defined $bot->{error}->{code} and $bot->{error}->{code} == 3;
+    is $bot->get_text($title, $res->{edit}->{newrevid}) => $bot->get_text($title, $oldrevid),
+        'Reverted successfully';
+};
 
-        my $newtext = $bot->get_text($title);
+subtest undo => sub {
+    my @history = $bot->get_history($title, 2);
+    my $res = $bot->undo($title, $history[0]->{revid});
+    plan defined $bot->{error}->{code} && $bot->{error}->{code} == 3
+        ? (skip_all => q{Can't use editing tests: } . $bot->{error}->{details})
+        : (tests => 1);
 
-        is $text, $newtext, 'Reverted successfully';
-    }
-
-    $bot->purge_page($title);
-
-    {   # Exercise undo()
-        my @history = $bot->get_history($title, 2);
-        my $revid   = $history[0]->{revid};
-        my $text    = $bot->get_text($title, $history[1]->{revid});
-        $bot->undo($title, $revid);
-        my $newtext = $bot->get_text($title);
-
-        is $text, $newtext, 'Undo was successful';
-    }
-}
+    my $is    = $bot->get_text($title, $res->{edit}->{newrevid});
+    my $ought = $bot->get_text($title, $history[1]->{revid});
+    is $is => $ought, 'Undo was successful'
+        or diag explain { is => $is, ought => $ought, history => \@history };
+};

@@ -14,10 +14,9 @@ if(defined($ENV{'PWPMakeTestSetWikiHost'})) {
     $bot->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
 }
 
-my @pages = $bot->search('Main Page');
-isa_ok(\@pages, 'ARRAY', 'Right return type');
-is($pages[0], 'Main Page', 'Found [[Main Page]]');
+my @categories = $bot->get_all_categories;
+ok(@categories, "Retrieved categories");
+is(scalar @categories, 10, "Got right default number");
 
-@pages = $bot->search('62c77d65adf258464e0f0820696b871251c21eb4');
-is scalar @pages, 0, 'No results found for a nonsensical search'
-    or diag explain \@pages;
+@categories = $bot->get_all_categories({max => 0});
+is(scalar @categories, 500, "Got right maximum number");

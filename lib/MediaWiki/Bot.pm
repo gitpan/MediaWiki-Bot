@@ -2,7 +2,7 @@ package MediaWiki::Bot;
 use strict;
 use warnings;
 # ABSTRACT: a high-level bot framework for interacting with MediaWiki wikis
-our $VERSION = '5.005006'; # VERSION
+our $VERSION = '5.005007'; # VERSION
 
 use HTML::Entities 3.28;
 use Carp;
@@ -672,7 +672,7 @@ sub revert {
 sub undo {
     my $self    = shift;
     my $page    = shift;
-    my $revid   = shift;
+    my $revid   = shift || croak "No revid given";
     my $summary = shift || "Reverting revision #$revid";
     my $after   = shift;
     $summary = "Reverting edits between #$revid & #$after" if defined($after);    # Is that clear? Correct?
@@ -682,7 +682,7 @@ sub undo {
         action         => 'edit',
         title          => $page,
         undo           => $revid,
-        undoafter      => $after,
+        (undoafter     => $after)x!! defined $after,
         summary        => $summary,
         token          => $edittoken,
         starttimestamp => $starttimestamp,
@@ -959,6 +959,31 @@ sub get_pages_in_category {
 }    # This ends the bare block around get_all_pages_in_category()
 
 
+sub get_all_categories {
+    my $self     = shift;
+    my $options  = shift;
+
+    my $query = {
+        action => 'query',
+        list => 'allcategories',
+    };
+
+    if ( defined $options && $options->{'max'} == '0' ) {
+        $query->{'aclimit'} = 'max';
+    }
+
+    my $res = $self->{api}->api($query);
+    return $self->_handle_api_error() unless $res;
+
+    my @categories;
+    foreach my $category ( @{$res->{'query'}->{'allcategories'}} ) {
+        my $title = $category->{'*'};
+        push @categories, $title;
+    }
+    return @categories;
+}
+
+
 sub linksearch {
     my $self    = shift;
     my $link    = shift;
@@ -1111,7 +1136,7 @@ sub global_image_usage {
         $hash->{gucontinue}    = $cont if $cont;
 
         my $res = $self->{api}->api($hash);
-        return $self->_handle_api_error() and last unless $res;
+        return $self->_handle_api_error() unless $res;
 
         $cont = $res->{'query-continue'}->{globalusage}->{gucontinue};
         warn "gucontinue: $cont\n" if $cont and $self->{debug} > 1;
@@ -2240,7 +2265,7 @@ __END__
 
 =pod
 
-=encoding utf-8
+=encoding UTF-8
 
 =head1 NAME
 
@@ -2248,7 +2273,7 @@ MediaWiki::Bot - a high-level bot framework for interacting with MediaWiki wikis
 
 =head1 VERSION
 
-version 5.005006
+version 5.005007
 
 =head1 SYNOPSIS
 
@@ -2594,7 +2619,7 @@ aliases.
 
 =head2 get_image
 
-    $buffer = $bot->get_image('File::Foo.jpg', {width=>256, height=>256});
+    $buffer = $bot->get_image('File:Foo.jpg', {width=>256, height=>256});
 
 Download an image from a wiki. This is derived from a similar function in
 L<MediaWiki::API>. This one allows the image to be scaled down by passing a hashref
@@ -2604,7 +2629,7 @@ It returns raw data in the original format. You may simply spew it to a file, or
 process it directly with a library such as L<Imager>.
 
     use File::Slurp qw(write_file);
-    my $img_data = $bot->get_image('File::Foo.jpg');
+    my $img_data = $bot->get_image('File:Foo.jpg');
     write_file( 'Foo.jpg', {binmode => ':raw'}, \$img_data );
 
 Images are scaled proportionally. (height/width) will remain
@@ -2840,6 +2865,16 @@ Use C<< { max => 0 } >> to get all results.
 Returns an array containing the names of B<all> pages in the specified category
 (include the Category: prefix), including sub-categories. The $options_hashref
 is described fully in L</"Options hashref">.
+
+=head2 get_all_categories
+
+Returns an array containing the names of all categories.
+
+    my @categories = $bot->get_all_categories();
+    print "The categories are:\n@categories\n";
+
+Use C<< { max => 0 } >> to get all results. The default number
+of categories returned is 10, the maximum allowed is 500.
 
 =head2 linksearch
 
@@ -3493,13 +3528,13 @@ site near you, or see L<https://metacpan.org/module/MediaWiki::Bot/>.
 
 =head1 SOURCE
 
-The development version is on github at L<http://github.com/MediaWiki-Bot/MediaWiki-Bot>
-and may be cloned from L<git://github.com/MediaWiki-Bot/MediaWiki-Bot.git>
+The development version is on github at L<http://github.com/doherty/MediaWiki-Bot>
+and may be cloned from L<git://github.com/doherty/MediaWiki-Bot.git>
 
 =head1 BUGS AND LIMITATIONS
 
 You can make new bug reports, and view existing ones, through the
-web interface at L<https://github.com/MediaWiki-Bot/MediaWiki-Bot/issues>.
+web interface at L<http://rt.cpan.org>.
 
 =head1 AUTHORS
 

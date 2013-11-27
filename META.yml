@@ -12,18 +12,18 @@ author:
   - 'Brian Obio <brianobio@gmail.com>'
   - 'patch and bug report contributors'
 build_requires:
-  File::Find: 0
   File::Spec: 0
-  File::Temp: 0
+  IO::Handle: 0
+  IPC::Open3: 0
+  List::MoreUtils: 0
   Module::Build: 0.3601
   Test::More: 0.96
-  Test::NoWarnings: 0
   Test::Warn: 0
   utf8: 0
 configure_requires:
   Module::Build: 0.3601
 dynamic_config: 0
-generated_by: 'Dist::Zilla version 4.300032, CPAN::Meta::Converter version 2.130880'
+generated_by: 'Dist::Zilla version 5.006, CPAN::Meta::Converter version 2.132830'
 license: gpl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -48,7 +48,6 @@ requires:
   strict: 0
   warnings: 0
 resources:
-  bugtracker: https://github.com/MediaWiki-Bot/MediaWiki-Bot/issues
   homepage: https://metacpan.org/module/MediaWiki::Bot
-  repository: git://github.com/MediaWiki-Bot/MediaWiki-Bot.git
-version: 5.005006
+  repository: git://github.com/doherty/MediaWiki-Bot.git
+version: 5.005007

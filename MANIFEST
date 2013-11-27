@@ -2,11 +2,13 @@ Build.PL
 Changes
 LICENSE
 MANIFEST
+MANIFEST.SKIP
 META.json
 META.yml
 Makefile.PL
 README
 README.mkdn
+dist.ini
 lib/MediaWiki/Bot.pm
 perlcritic.rc
 t/00-compile.t
@@ -59,6 +61,7 @@ t/45-contributions.t
 t/46-usergroups.t
 t/47-global_image_usage.t
 t/48-get_image.t
+t/49-get_all_categories.t
 xt/author/critic.t
 xt/author/test-eol.t
 xt/release/cpan-changes.t
