@@ -6,7 +6,7 @@ use MediaWiki::Bot;
 my $t = __FILE__;
 
 my $bot = MediaWiki::Bot->new({
-    agent   => "MediaWiki::Bot tests ($t)",
+    agent   => "MediaWiki::Bot tests (https://metacpan.org/MediaWiki::Bot; $t)",
     host    => 'meta.wikimedia.org',
 });
 
@@ -16,8 +16,8 @@ if(defined($ENV{'PWPMakeTestSetWikiHost'})) {
 
 # Hasn't been locked (yet)
 my $result = $bot->was_locked('Jimbo Wales');
-is($result, 0, 'lock history');
+ok(!$result, 'lock history');
 
 # I was once locked
 $result = $bot->was_locked('Mike.lifeguard');
-is($result, 1, 'lock history');
+ok($result, 'lock history');

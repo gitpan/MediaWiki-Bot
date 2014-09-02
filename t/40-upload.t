@@ -13,7 +13,7 @@ plan $username && $password
     : (skip_all => 'upload test requires login with upload permission');
 
 my $bot = MediaWiki::Bot->new({
-    agent   => "MediaWiki::Bot tests ($t)",
+    agent   => "MediaWiki::Bot tests (https://metacpan.org/MediaWiki::Bot; $t)",
     host    => 'test.wikipedia.org',
     login_data => { username => $username, password => $password },
 });
@@ -65,7 +65,8 @@ subtest 'file upload' => sub {
         });
         ok $status and diag "Uploaded to $filename";
         like $status->{upload}->{result}, qr/Success|Warning/ or diag explain $status;
-        is $status->{upload}->{filename}, $filename or diag explain $status if $status->{upload}->{result} eq 'Success';
+        is $status->{upload}->{filename}, $filename
+            or diag explain $status if $status->{upload}->{result} eq 'Success';
     }
 };
 

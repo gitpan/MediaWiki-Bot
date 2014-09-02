@@ -7,7 +7,7 @@ use MediaWiki::Bot;
 my $t = __FILE__;
 
 my $bot = MediaWiki::Bot->new({
-    agent   => "MediaWiki::Bot tests ($t)",
+    agent   => "MediaWiki::Bot tests (https://metacpan.org/MediaWiki::Bot; $t)",
     host    => 'test.wikipedia.org',
 });
 
@@ -31,7 +31,8 @@ my $ought = [
             'user' => 'Mark',
             'title' => 'Main Page',
             'type' => 'delete',
-            'logid' => 3672
+            'logid' => 3672,
+            logpage => 0,
           },
           {
             'ns' => 0,
@@ -42,7 +43,8 @@ my $ought = [
             'user' => 'Mark',
             'title' => 'Main Page',
             'type' => 'delete',
-            'logid' => 3671
+            'logid' => 3671,
+            logpage => 0,
           }
         ];
 

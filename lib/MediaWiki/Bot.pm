@@ -2,7 +2,7 @@ package MediaWiki::Bot;
 use strict;
 use warnings;
 # ABSTRACT: a high-level bot framework for interacting with MediaWiki wikis
-our $VERSION = '5.005007'; # VERSION
+our $VERSION = '5.006000'; # VERSION
 
 use HTML::Entities 3.28;
 use Carp;
@@ -10,6 +10,11 @@ use Digest::MD5 2.39 qw(md5_hex);
 use Encode qw(encode_utf8);
 use MediaWiki::API 0.36;
 use List::Util qw(sum);
+use MediaWiki::Bot::Constants qw(:all);
+
+use Exporter qw(import);
+our @EXPORT_OK = @{ $MediaWiki::Bot::Constants::EXPORT_TAGS{all} };
+our %EXPORT_TAGS = ( constants => \@EXPORT_OK );
 
 use Module::Pluggable search_path => [qw(MediaWiki::Bot::Plugin)], 'require' => 1;
 foreach my $plugin (__PACKAGE__->plugins) {
@@ -58,12 +63,19 @@ sub new {
     $assert   =~ s/[&?]assert=// if $assert; # Strip out param part, leaving just the value
     $operator =~ s/^User://i     if $operator;
 
-    # Set defaults
-    unless ($agent) {
-        $agent  = 'MediaWiki::Bot/' . (defined __PACKAGE__->VERSION
-            ? __PACKAGE__->VERSION
-            : 'dev');
-        $agent .= " (User:$operator)" if $operator;
+    if (not $agent and not $operator) {
+        carp q{You should provide either a customized user agent string }
+            . q{(see https://meta.wikimedia.org/wiki/User-agent_policy) }
+            . q{or provide your username as `operator'.};
+    }
+    elsif (not $agent and $operator) {
+        $operator =~ s{^User:}{};
+        $agent = sprintf(
+            'Perl MediaWiki::Bot/%s (%s; [[User:%s]])',
+            (defined __PACKAGE__->VERSION ? __PACKAGE__->VERSION : 'dev'),
+            'https://metacpan.org/MediaWiki::Bot',
+            $operator
+        );
     }
 
     my $self = bless({}, $package);
@@ -154,7 +166,7 @@ sub set_wiki {
         : "$protocol://$host/api.php"; # $path is '', so don't use http://domain.com//api.php
     warn "Wiki set to " . $self->{api}->{config}{api_url} . "\n" if $self->{debug} > 1;
 
-    return 1;
+    return RET_TRUE;
 }
 
 
@@ -324,11 +336,8 @@ sub _do_sul {
 sub logout {
     my $self = shift;
 
-    my $hash = {
-        action => 'logout',
-    };
-    $self->{api}->api($hash);
-    return 1;
+    $self->{api}->api({ action => 'logout' });
+    return RET_TRUE;
 }
 
 
@@ -341,6 +350,8 @@ sub edit {
     my $assert;
     my $markasbot;
     my $section;
+    my $captcha_id;
+    my $captcha_solution;
 
     if (ref $_[0] eq 'HASH') {
         $page      = $_[0]->{page};
@@ -350,6 +361,8 @@ sub edit {
         $assert    = $_[0]->{assert};
         $markasbot = $_[0]->{markasbot};
         $section   = $_[0]->{section};
+        $captcha_id         = $_[0]->{captcha_id};
+        $captcha_solution   = $_[0]->{captcha_solution};
     }
     else {
         warnings::warnif('deprecated', 'Please pass a hashref; this method of calling '
@@ -374,6 +387,12 @@ sub edit {
     $is_minor  = 1 unless defined($is_minor);
     $markasbot = 1 unless defined($markasbot);
 
+    # Clear any captcha data that might remain from a previous edit attempt
+    delete $self->{error}->{captcha};
+    carp 'Need both captcha_id and captcha_solution when editing with a solved CAPTCHA'
+        if (defined $captcha_id and not defined $captcha_solution)
+        or (defined $captcha_solution and not defined $captcha_id);
+
     my ($edittoken, $lastedit, $tokentime) = $self->_get_edittoken($page);
     return $self->_handle_api_error() unless $edittoken;
 
@@ -397,43 +416,28 @@ sub edit {
         ( $section  ? (section => $section) : ()),
         ( $assert   ? (assert => $assert)   : ()),
         ( $is_minor ? (minor => 1)          : (notminor => 1)),
+        ( $captcha_id ? (captchaid => $captcha_id) : ()),
+        ( $captcha_solution ? (captchaword => $captcha_solution) : ()),
     };
 
+    ### Actually do the edit
     my $res = $self->{api}->api($hash);
     return $self->_handle_api_error() unless $res;
+
     if ($res->{edit}->{result} && $res->{edit}->{result} eq 'Failure') {
-        if ($self->{operator}) {
-            my $optalk = $self->get_text('User talk:' . $self->{operator});
-            if (defined($optalk)) {
-                carp "Sending warning!" if $self->{debug};
-                if ($self->{'username'}) {
-                    $self->edit(
-                        page     => "User talk:$self->{'operator'}",
-                        text     => $optalk
-                                    . "\n\n==Error with $self->{'username'}==\n"
-                                    . "$self->{'username'} needs to be logged in! ~~~~",
-                        summary  => 'bot issue',
-                        is_minor => 0,
-                        assert   => '',
-                    );
-                    croak "$self->{'username'} got logged out" if $self->{debug};
-                }
-                else { # The bot wasn't ever supposed to be logged in
-                    $self->edit(
-                        page     => "User talk:$self->{'operator'}",
-                        text     => $optalk
-                                    . "\n\n==Error with your bot==\n"
-                                    . "Your bot encountered an error. ~~~~",
-                        summary  => 'bot issue',
-                        is_minor => 0,
-                        assert   => '',
-                    );
-                    croak "Bot encountered an error while editing" if $self->{debug};
-                }
-            }
+        # https://www.mediawiki.org/wiki/API:Edit#CAPTCHAs_and_extension_errors
+        # You need to solve the CAPTCHA, then retry the request with the ID in
+        # this error response and the solution.
+        if (exists $res->{edit}->{captcha}) {
+            return $self->_handle_api_error({
+                code => ERR_CAPTCHA,
+                details => 'captcharequired: This action requires that a CAPTCHA be solved',
+                captcha => $res->{edit}->{captcha},
+            });
         }
-        return;
+        return $self->_handle_api_error();
     }
+
     return $res;
 }
 
@@ -451,8 +455,9 @@ sub move {
         to     => $to,
         reason => $reason,
     };
-    $hash->{movetalk}   = $opts->{movetalk}   if defined($opts->{movetalk});
-    $hash->{noredirect} = $opts->{noredirect} if defined($opts->{noredirect});
+    $hash->{movetalk}     = $opts->{movetalk}     if defined($opts->{movetalk});
+    $hash->{noredirect}   = $opts->{noredirect}   if defined($opts->{noredirect});
+    $hash->{movesubpages} = $opts->{movesubpages} if defined($opts->{movesubpages});
 
     my $res = $self->{api}->edit($hash);
     return $self->_handle_api_error() unless $res;
@@ -523,13 +528,9 @@ sub get_text {
     my $res = $self->{api}->api($hash);
     return $self->_handle_api_error() unless $res;
     my ($id, $data) = %{ $res->{query}->{pages} };
-    if ($id == -1) {    # Page doesn't exist
-        return;
-    }
-    else {              # Page exists
-        my $wikitext = $data->{revisions}[0]->{'*'};
-        return $wikitext;
-    }
+
+    return if $id == PAGE_NONEXISTENT;
+    return $data->{revisions}[0]->{'*'}; # the wikitext
 }
 
 
@@ -545,12 +546,8 @@ sub get_id {
     my $res = $self->{api}->api($hash);
     return $self->_handle_api_error() unless $res;
     my ($id) = %{ $res->{query}->{pages} };
-    if ($id == -1) {
-        return;
-    }
-    else {
-        return $id;
-    }
+    return if $id == PAGE_NONEXISTENT;
+    return $id;
 }
 
 
@@ -734,7 +731,8 @@ sub update_rc {
 
     my $res = $self->{api}->list($hash, $options);
     return $self->_handle_api_error() unless $res;
-    return 1 if (!ref $res);    # Not a ref when using callback
+    return RET_TRUE if not ref $res; # Not a ref when using callback
+
     my @rc_table;
     foreach my $hash (@{$res}) {
         push(
@@ -798,7 +796,7 @@ sub recentchanges {
 
     my $res = $self->{api}->list($hash, $options)
         or return $self->_handle_api_error();
-    return 1 unless ref $res;    # Not a ref when using callback
+    return RET_TRUE unless ref $res; # Not a ref when using callback
     return @$res;
 }
 
@@ -828,7 +826,7 @@ sub what_links_here {
 
     my $res = $self->{api}->list($hash, $options);
     return $self->_handle_api_error() unless $res;
-    return 1 if (!ref $res);    # When using a callback hook, this won't be a reference
+    return RET_TRUE if not ref $res; # When using a callback hook, this won't be a reference
     my @links;
     foreach my $hashref (@$res) {
         my $title    = $hashref->{title};
@@ -865,7 +863,7 @@ sub list_transclusions {
 
     my $res = $self->{api}->list($hash, $options);
     return $self->_handle_api_error() unless $res;
-    return 1 if (!ref $res);    # When using a callback hook, this won't be a reference
+    return RET_TRUE if not ref $res; # When using a callback hook, this won't be a reference
     my @links;
     foreach my $hashref (@$res) {
         my $title    = $hashref->{title};
@@ -886,7 +884,7 @@ sub get_pages_in_category {
         my ($cat) = split(/:/, $category, 2);
         if ($cat ne 'Category') {    # 'Category' is a canonical name for ns14
             my $ns_data     = $self->_get_ns_data();
-            my $cat_ns_name = $ns_data->{14};        # ns14 gives us the localized name for 'Category'
+            my $cat_ns_name = $ns_data->{+NS_CATEGORY};
             if ($cat ne $cat_ns_name) {
                 $category = "$cat_ns_name:$category";
             }
@@ -907,14 +905,10 @@ sub get_pages_in_category {
     delete($options->{max}) if $options->{max} == 0;
 
     my $res = $self->{api}->list($hash, $options);
-    return 1 if (!ref $res);    # Not a hashref when using callback
+    return RET_TRUE if not ref $res; # Not a hashref when using callback
     return $self->_handle_api_error() unless $res;
-    my @pages;
-    foreach my $hash (@$res) {
-        my $title = $hash->{title};
-        push @pages, $title;
-    }
-    return @pages;
+
+    return map { $_->{title} } @$res;
 }
 
 
@@ -935,7 +929,7 @@ sub get_pages_in_category {
                                     # call, but not cleared when the call is recursive.
 
         my $ns_data     = $self->_get_ns_data();
-        my $cat_ns_name = $ns_data->{14};
+        my $cat_ns_name = $ns_data->{+NS_CATEGORY};
 
         foreach my $page (@first) {
             if ($page =~ m/^$cat_ns_name:/) {
@@ -975,12 +969,7 @@ sub get_all_categories {
     my $res = $self->{api}->api($query);
     return $self->_handle_api_error() unless $res;
 
-    my @categories;
-    foreach my $category ( @{$res->{'query'}->{'allcategories'}} ) {
-        my $title = $category->{'*'};
-        push @categories, $title;
-    }
-    return @categories;
+    return map { $_->{'*'} } @{ $res->{'query'}->{'allcategories'} };
 }
 
 
@@ -1006,14 +995,13 @@ sub linksearch {
 
     my $res = $self->{api}->list($hash, $options);
     return $self->_handle_api_error() unless $res;
-    return 1 if (!ref $res);    # When using a callback hook, this won't be a reference
-    my @links;
-    foreach my $hashref (@$res) {
-        my $url  = $hashref->{'url'};
-        my $page = $hashref->{'title'};
-        push(@links, { url => $url, title => $page });
-    }
-    return @links;
+    return RET_TRUE if not ref $res; # When using a callback hook, this won't be a reference
+
+    return map {{
+        url   => $_->{url},
+        title => $_->{title},
+    }} @$res;
+
 }
 
 
@@ -1053,11 +1041,8 @@ sub get_namespace_names {
             siprop => 'namespaces',
     });
     return $self->_handle_api_error() unless $res;
-    my %return;
-    foreach my $id (keys %{ $res->{query}->{namespaces} }) {
-        $return{$id} = $res->{query}->{namespaces}->{$id}->{'*'};
-    }
-    return %return;
+    return map { $_ => $res->{query}->{namespaces}->{$_}->{'*'} }
+        keys %{ $res->{query}->{namespaces} };
 }
 
 
@@ -1073,9 +1058,9 @@ sub image_usage {
             . q{namespace in the image name. If you don't, MediaWiki::Bot might }
             . q{incur a network round-trip to get the localized namespace name});
         my $ns_data = $self->_get_ns_data();
-        my $image_ns_name = $ns_data->{6};
-        if ($image !~ m/^\Q$image_ns_name\E:/) {
-            $image = "$image_ns_name:$image";
+        my $file_ns_name = $ns_data->{+NS_FILE};
+        if ($image !~ m/^\Q$file_ns_name\E:/) {
+            $image = "$file_ns_name:$image";
         }
     }
 
@@ -1096,14 +1081,9 @@ sub image_usage {
     }
     my $res = $self->{api}->list($hash, $options);
     return $self->_handle_api_error() unless $res;
-    return 1 if (!ref $res);    # When using a callback hook, this won't be a reference
-    my @pages;
-    foreach my $hashref (@$res) {
-        my $title = $hashref->{title};
-        push(@pages, $title);
-    }
+    return RET_TRUE if not ref $res; # When using a callback hook, this won't be a reference
 
-    return @pages;
+    return map { $_->{title} } @$res;
 }
 
 
@@ -1116,7 +1096,7 @@ sub global_image_usage {
 
     if ($image !~ m/^File:|Image:/) {
         my $ns_data = $self->_get_ns_data();
-        my $image_ns_name = $ns_data->{6};
+        my $image_ns_name = $ns_data->{+NS_FILE};
         if ($image !~ m/^\Q$image_ns_name\E:/) {
             $image = "$image_ns_name:$image";
         }
@@ -1177,13 +1157,13 @@ sub is_blocked {
 
     my $number = scalar @{ $res->{query}->{blocks} };    # The number of blocks returned
     if ($number == 1) {
-        return 1;
+        return RET_TRUE;
     }
     elsif ($number == 0) {
-        return 0;
+        return RET_FALSE;
     }
     else {
-        return; # UNPOSSIBLE!
+        confess "This query should return at most one result, but the API returned more than that.";
     }
 }
 
@@ -1229,34 +1209,34 @@ sub test_image_exists {
     foreach my $id (@sorted_ids) {
         if ($res->{query}->{pages}->{$id}->{imagerepository} eq 'shared') {
             if ($multi) {
-                unshift @return, 2;
+                unshift @return, FILE_SHARED;
             }
             else {
-                return 2;
+                return FILE_SHARED;
             }
         }
         elsif (exists($res->{query}->{pages}->{$id}->{missing})) {
             if ($multi) {
-                unshift @return, 0;
+                unshift @return, FILE_NONEXISTENT;
             }
             else {
-                return 0;
+                return FILE_NONEXISTENT;
             }
         }
         elsif ($res->{query}->{pages}->{$id}->{imagerepository} eq '') {
             if ($multi) {
-                unshift @return, 3;
+                unshift @return, FILE_PAGE_TEXT_ONLY;
             }
             else {
-                return 3;
+                return FILE_PAGE_TEXT_ONLY;
             }
         }
         elsif ($res->{query}->{pages}->{$id}->{imagerepository} eq 'local') {
             if ($multi) {
-                unshift @return, 1;
+                unshift @return, FILE_LOCAL;
             }
             else {
-                return 1;
+                return FILE_LOCAL;
             }
         }
     }
@@ -1282,7 +1262,7 @@ sub get_pages_in_namespace {
 
     my $res = $self->{api}->list($hash, $options);
     return $self->_handle_api_error() unless $res;
-    return 1 if (!ref $res); # Not a ref when using callback
+    return RET_TRUE if not ref $res; # Not a ref when using callback
     return map { $_->{title} } @$res;
 }
 
@@ -1361,8 +1341,6 @@ sub get_users {
     my $rvstartid = shift;
     my $direction = shift;
 
-    my @return;
-
     if ($limit > 50) {
         $self->{errstr} = "Error requesting history for $pagename: Limit may not be set to values above 50";
         carp $self->{errstr};
@@ -1382,12 +1360,7 @@ sub get_users {
     return $self->_handle_api_error() unless $res;
 
     my ($id) = keys %{ $res->{query}->{pages} };
-    my $array = $res->{query}->{pages}->{$id}->{revisions};
-    foreach (@{$array}) {
-        push @return, $_->{user};
-    }
-
-    return @return;
+    return map { $_->{user} } @{$res->{query}->{pages}->{$id}->{revisions}};
 }
 
 
@@ -1411,13 +1384,13 @@ sub was_blocked {
 
     my $number = scalar @{ $res->{query}->{logevents} };    # The number of blocks returned
     if ($number == 1) {
-        return 1;
+        return RET_TRUE;
     }
     elsif ($number == 0) {
-        return 0;
+        return RET_FALSE;
     }
     else {
-        return; # UNPOSSIBLE!
+        confess "This query should return at most one result, but the API returned more than that.";
     }
 }
 
@@ -1441,13 +1414,16 @@ sub expandtemplates {
 
     my $hash = {
         action => 'expandtemplates',
+        prop   => 'wikitext',
         ( $page ? (title  => $page) : ()),
         text   => $text,
     };
     my $res = $self->{api}->api($hash);
     return $self->_handle_api_error() unless $res;
 
-    return $res->{expandtemplates}->{'*'};
+    return exists $res->{expandtemplates}->{'*'}
+        ? $res->{expandtemplates}->{'*'}
+        : $res->{expandtemplates}->{wikitext};
 }
 
 
@@ -1467,13 +1443,9 @@ sub get_allusers {
     delete $opts->{max} if exists $opts->{max} and $opts->{max} == 0;
     my $res = $self->{api}->list($hash, $opts);
     return $self->_handle_api_error() unless $res;
-    return 1 if (!ref $res);    # Not a ref when using callback
+    return RET_TRUE if not ref $res; # Not a ref when using callback
 
-    my @return;
-    for my $ref (@{ $res }) {
-        push @return, $ref->{name};
-    }
-    return @return;
+    return map { $_->{name} } @$res;
 }
 
 
@@ -1597,15 +1569,11 @@ sub prefixindex {
     my $res = $self->{api}->list($hash, $options);
 
     return $self->_handle_api_error() unless $res;
-    return 1 if (!ref $res);    # Not a ref when using callback hook
-    my @pages;
-    foreach my $hashref (@$res) {
-        my $title    = $hashref->{title};
-        my $redirect = defined($hashref->{redirect});
-        push @pages, { title => $title, redirect => $redirect };
-    }
+    return RET_TRUE if not ref $res; # Not a ref when using callback hook
 
-    return @pages;
+    return map {
+        { title => $_->{title}, redirect => defined $_->{redirect} }
+    } @$res;
 }
 
 
@@ -1634,14 +1602,9 @@ sub search {
 
     my $res = $self->{api}->list($hash, $options);
     return $self->_handle_api_error() unless $res;
-    return 1 if (!ref $res);    # Not a ref when used with callback
-    my @pages;
-    foreach my $result (@$res) {
-        my $title = $result->{title};
-        push @pages, $title;
-    }
+    return RET_TRUE if not ref $res; # Not a ref when used with callback
 
-    return @pages;
+    return map { $_->{title} } @$res;
 }
 
 
@@ -1656,7 +1619,7 @@ sub get_log {
 
     if ($user) {
         my $ns_data      = $self->_get_ns_data();
-        my $user_ns_name = $ns_data->{2};
+        my $user_ns_name = $ns_data->{+NS_USER};
         $user =~ s/^$user_ns_name://;
     }
 
@@ -1672,7 +1635,7 @@ sub get_log {
 
     my $res = $self->{api}->list($hash, $options);
     return $self->_handle_api_error() unless $res;
-    return 1 if (!ref $res);    # Not a ref when using callback
+    return RET_TRUE if not ref $res; # Not a ref when using callback
 
     return $res;
 }
@@ -1693,7 +1656,7 @@ sub is_g_blocked {
             bgip    => $ip,
     });
     return $self->_handle_api_error() unless $res;
-    return 0 unless ($res->{query}->{globalblocks}->[0]);
+    return RET_FALSE unless ($res->{query}->{globalblocks}->[0]);
 
     return $res->{query}->{globalblocks}->[0]->{address};
 }
@@ -1723,14 +1686,13 @@ sub was_g_blocked {
     my $number = scalar @{ $res->{query}->{logevents} };    # The number of blocks returned
 
     if ($number == 1) {
-        return 1;
+        return RET_TRUE;
     }
     elsif ($number == 0) {
-        return 0;
+        return RET_FALSE;
     }
     else {
-        warn "Got multiple results for $ip unexpectedly";
-        return; # UNPOSSIBLE!
+        confess "This query should return at most one result, but the API gave more than that.";
     }
 }
 
@@ -1742,9 +1704,9 @@ sub was_locked {
     # This query should always go to Meta
     unless (
         $self->{api}->{config}->{api_url} =~ m,
-            http://meta.wikimedia.org/w/api.php
+            \Qhttp://meta.wikimedia.org/w/api.php\E
                 |
-            https://secure.wikimedia.org/wikipedia/meta/w/api.php
+            \Qhttps://secure.wikimedia.org/wikipedia/meta/w/api.php\E
         ,x    # /x flag is pretty awesome :)
         )
     {
@@ -1764,13 +1726,13 @@ sub was_locked {
     return $self->_handle_api_error() unless $res;
     my $number = scalar @{ $res->{query}->{logevents} };
     if ($number == 1) {
-        return 1;
+        return RET_TRUE;
     }
     elsif ($number == 0) {
-        return 0;
+        return RET_FALSE;
     }
     else {
-        return;
+        confess "This query should return at most one result, but the API returned more than that.";
     }
 }
 
@@ -1833,26 +1795,7 @@ sub patrol {
         return @return;
     }
     else {
-        my $token_res = $self->{api}->api({
-            action  => 'query',
-            list    => 'recentchanges',
-            rctoken => 'patrol',
-            rclimit => 1,
-        });
-        return $self->_handle_api_error() unless $token_res;
-        if (exists $token_res->{warnings} and
-            $token_res->{warnings}->{recentchanges}->{'*'} eq q{Action 'patrol' is not allowed for the current user})
-        {
-            $self->{error} = {
-                code    => 3,
-                details => 'permissiondenied: ' . $token_res->{warnings}->{recentchanges}->{'*'},
-                stacktrace => 'permissiondenied: ' . $token_res->{warnings}->{recentchanges}->{'*'}
-                    . ' at ' . __FILE__ . ' line ' . __LINE__,
-            };
-            return undef;
-        }
-        my $token = $token_res->{query}->{recentchanges}->[0]->{patroltoken};
-
+        my ($token) = $self->_get_edittoken('patrol');
         my $res = $self->{api}->api({
             action  => 'patrol',
             rcid    => $rcid,
@@ -1884,11 +1827,11 @@ sub email {
 
     $user =~ s/^User://;
     if ($user =~ m/:/) {
-        my $user_ns_name = $self->_get_ns_data()->{2};
+        my $user_ns_name = $self->_get_ns_data()->{+NS_USER};
         $user =~ s/^$user_ns_name://;
     }
 
-    my ($token) = $self->_get_edittoken();
+    my ($token) = $self->_get_edittoken;
     my $res = $self->{api}->api({
         action  => 'emailuser',
         target  => $user,
@@ -1919,14 +1862,12 @@ sub top_edits {
         uclimit => 'max',
     }, $options);
     return $self->_handle_api_error() unless $res;
-    return 1 if (!ref $res);    # Not a ref when using callback
+    return RET_TRUE if not ref $res; # Not a ref when using callback
 
-    my @titles;
-    foreach my $page (@$res) {
-        push @titles, $page->{title} if exists($page->{top});
-    }
-
-    return @titles;
+    return
+        map { $_->{title} }
+        grep { exists $_->{top} }
+        @$res;
 }
 
 
@@ -1958,7 +1899,7 @@ sub contributions {
     };
     my $res = $self->{api}->list($query, $opts);
     return $self->_handle_api_error() unless $res->[0];
-    return 1 if (!ref $res); # Not a ref when using callback
+    return RET_TRUE if not ref $res; # Not a ref when using callback
 
     return @$res;
 }
@@ -1973,12 +1914,12 @@ sub upload {
             $data = do { local $/; open my $in, '<:raw', $args->{file} or die $!; <$in> };
     }
     unless (defined $data) {
-        $self->{error}->{code} = 6;
+        $self->{error}->{code} = ERR_PARAMS;
         $self->{error}->{details} = q{You must provide either file contents or a filename.};
         return undef;
     }
     unless (defined $args->{file} or defined $args->{title}) {
-        $self->{error}->{code} = 6;
+        $self->{error}->{code} = ERR_PARAMS;
         $self->{error}->{details} = q{You must specify a title to upload to.};
         return undef;
     }
@@ -2000,7 +1941,7 @@ sub upload_from_url {
 
     my $url  = delete $args->{url};
     unless (defined $url) {
-        $self->{error}->{code} = 6;
+        $self->{error}->{code} = ERR_PARAMS;
         $self->{error}->{details} = q{You must provide URL of file to upload.};
         return undef;
     }
@@ -2049,7 +1990,7 @@ sub usergroups {
         return @{ $res_user->{groups} }; # SUCCESS
     }
 
-    return $self->_handle_api_error({ code => 3, details => qq{Results for $user weren't returned by the API} });
+    return $self->_handle_api_error({ code => ERR_API, details => qq{Results for $user weren't returned by the API} });
 }
 
 
@@ -2057,34 +1998,39 @@ sub usergroups {
 # Internal use #
 ################
 
-sub _get_edittoken { # Actually returns ($edittoken, $basetimestamp, $starttimestamp)
+sub _get_edittoken { # Actually returns ($token, $base_timestamp, $start_timestamp)
     my $self = shift;
     my $page = shift || 'Main Page';
-    my $type = shift || 'edit';
+    my $type = shift || 'csrf';
 
     my $res = $self->{api}->api({
         action  => 'query',
+        meta => 'siteinfo|tokens',
         titles  => $page,
-        prop    => 'info|revisions',
-        intoken => $type,
+        prop    => 'revisions',
+        rvprop  => 'timestamp',
+        type => $type,
     }) or return $self->_handle_api_error();
 
-    my $data           = ( %{ $res->{query}->{pages} })[1];
-    my $edittoken      = $data->{edittoken};
-    my $tokentimestamp = $data->{starttimestamp};
-    my $basetimestamp  = $data->{revisions}[0]->{timestamp};
-    return ($edittoken, $basetimestamp, $tokentimestamp);
+    my $data            = ( %{ $res->{query}->{pages} })[1];
+    my $base_timestamp  = $data->{revisions}[0]->{timestamp};
+    my $start_timestamp = $res->{query}->{general}->{time};
+    my $token           = $res->{query}->{tokens}->{"${type}token"};
+
+    return ($token, $base_timestamp, $start_timestamp);
 }
 
 sub _handle_api_error {
-    my $self = shift;
+    my $self  = shift;
     my $error = shift;
+
+    $self->{error} = {};
 
     carp 'Error code '
         . $self->{api}->{error}->{code}
         . ': '
         . $self->{api}->{error}->{details} if $self->{debug};
-     $self->{error} =
+    $self->{error} =
         (defined $error and ref $error eq 'HASH' and exists $error->{code} and exists $error->{details})
         ? $error
         : $self->{api}->{error};
@@ -2122,7 +2068,7 @@ sub _do_autoconfig {
         uiprop => 'rights|groups',
     };
     my $res = $self->{api}->api($hash);
-    return $self->_handle_api_error() unless $res;
+    return $self->_handle_api_error() unless  $res;
     return $self->_handle_api_error() unless  $res->{query};
     return $self->_handle_api_error() unless  $res->{query}->{userinfo};
     return $self->_handle_api_error() unless  $res->{query}->{userinfo}->{name};
@@ -2143,7 +2089,7 @@ sub _do_autoconfig {
         }
     }
 
-    my @groups = @{ $res->{query}->{userinfo}->{groups} || [] }; # anon arrayref in case there are no groups
+    my @groups = @{ $res->{query}->{userinfo}->{groups} || [] }; # athere may be no groups
     my $is_sysop = 0;
     foreach my $group (@groups) {
         if ($group eq 'sysop') {
@@ -2156,7 +2102,7 @@ sub _do_autoconfig {
     }
     $self->{assert} = $default_assert unless $self->{assert};
 
-    return 1;
+    return RET_TRUE;
 }
 
 sub _get_sitematrix {
@@ -2252,9 +2198,18 @@ sub _get_ns_alias_data {
         siprop  => 'namespacealiases|namespaces',
     });
 
-    foreach my $entry (@{ $ns_res->{query}->{namespacealiases} }) { # what a mess D:
-        $self->{ns_alias_data}->{ $entry->{'*'} } = $ns_res->{query}->{namespaces}->{ $entry->{id} }->{'*'};
-    }
+    my %ns_alias_data =
+        map {   # Map namespace alias names like "WP" to the canonical namespace name
+                # from the "namespaces" part of the response
+            $_->{ns_alias} => $ns_res->{query}->{namespaces}->{ $_->{ns_number} }->{canonical}
+        }
+        map {   # Map namespace alias names (from the "namespacealiases" part of the response)
+                # like "WP" to the namespace number (usd to look up canonical data in the
+                # "namespaces" part of the response)
+            { ns_alias => $_->{'*'}, ns_number => $_->{id} }
+        } @{ $ns_res->{query}->{namespacealiases} };
+
+    $self->{ns_alias_data} = \%ns_alias_data;
     return $self->{ns_alias_data};
 }
 
@@ -2273,11 +2228,11 @@ MediaWiki::Bot - a high-level bot framework for interacting with MediaWiki wikis
 
 =head1 VERSION
 
-version 5.005007
+version 5.006000
 
 =head1 SYNOPSIS
 
-    use MediaWiki::Bot;
+    use MediaWiki::Bot qw(:constants);
 
     my $bot = MediaWiki::Bot->new({
         assert      => 'bot',
@@ -2299,7 +2254,8 @@ with the MediaWiki API (L<http://en.wikipedia.org/w/api.php>).
 =head2 new
 
     my $bot = MediaWiki::Bot({
-        host    => 'en.wikipedia.org',
+        host     => 'en.wikipedia.org',
+        operator => 'Mike.lifeguard',
     });
 
 Calling C<< MediaWiki::Bot->new() >> will create a new MediaWiki::Bot object. The
@@ -2309,7 +2265,10 @@ only parameter is a hashref with keys:
 
 =item *
 
-I<agent> sets a custom useragent
+I<agent> sets a custom useragent. It is recommended to use C<operator>
+instead, which is all we need to do the right thing for you. If you really
+want to do it yourself, see L<https://meta.wikimedia.org/wiki/User-agent_policy>
+for guidance on what information must be included.
 
 =item *
 
@@ -2319,11 +2278,10 @@ Refer to L<http://mediawiki.org/wiki/Extension:AssertEdit>.
 
 =item *
 
-I<operator> allows the bot to send you a message when it fails an assert
-
-In addition, it will be integrated into the default useragent (which may not be
-used if you set agent yourself). The message will tell you that $useragent is
-logged out, so use a descriptive one if you set it.
+I<operator> allows the bot to send you a message when it fails an assert. This
+is also the recommended way to customize the user agent string, which is
+required by the Wikimedia Foundation. A warning will be emitted if you omit
+this.
 
 =item *
 
@@ -2361,8 +2319,11 @@ For example:
     my $bot = MediaWiki::Bot->new({
         assert      => 'bot',
         protocol    => 'https',
-        host        => 'secure.wikimedia.org',
-        path        => 'wikipedia/meta/w',
+        host        => 'en.wikimedia.org',
+        agent       => sprintf(
+            'PerlWikiBot/%s (https://metacpan.org/MediaWiki::Bot; User:Mike.lifeguard)',
+            MediaWiki::Bot->VERSION
+        ),
         login_data  => { username => "Mike's bot account", password => "password" },
     });
 
@@ -2532,6 +2493,38 @@ You can also call this as:
     $bot->edit($page, $text, $summary, $is_minor, $assert, $markasbot);
 
 B<This form is deprecated>, and will emit deprecation warnings.
+
+=head3 CAPTCHAs
+
+If a L<https://en.wikipedia.org/wiki/CAPTCHA|CAPTCHA> is encountered, the
+call to C<edit> will return false, with the error code set to C<ERR_CAPTCHA>
+and the details informing you that solving a CAPTCHA is required for this
+action. The information you need to actually solve the captcha (for example
+the URL for the image) is given in C<< $bot->{error}->{captcha} >> as a
+hash reference. You will want to grab the keys 'url' (a relative URL to
+the image) and 'id' (the ID of the CAPTCHA). Once you have solved the
+CAPTCHA (presumably by interacting with a human), retry the edit, adding
+C<captcha_id> and C<captcha_solution> parameters:
+
+    my $edit_status = $bot->edit({page => 'Main Page', text => 'got your nose'});
+    if (not $edit_status) {
+        if ($bot->{error}->{code} == ERR_CAPTCHA) {
+            my @captcha_uri = split /\Q?/, $bot->{error}{captcha}{url}, 2;
+            my $image = URI->new(sprintf '%s://%s%s?%s' =>
+                $bot->{protocol}, $bot->{host}, $captcha_uri[0], $captcha_uri[1],
+            );
+
+            require Term::ReadLine;
+            my $term = Term::ReadLine->new('Solve the captcha');
+            $term->ornaments(0);
+            my $answer = $term->readline("Please solve $image and type the answer: ");
+
+            # Add new CAPTCHA params to the edit we're attempting
+            $edit->{captcha_id} = $bot->{error}->{captcha}->{id};
+            $edit->{captcha_solution} = $answer;
+            $status = $bot->edit($edit);
+        }
+    }
 
 =head2 move
 
@@ -3044,36 +3037,37 @@ Checks if an image exists at $page.
 
 =item *
 
-0 means "Nothing there"
+FILE_NONEXISTENT (0) means "Nothing there"
 
 =item *
 
-1 means "Yes, an image exists locally"
+FILE_LOCAL (1) means "Yes, an image exists locally"
 
 =item *
 
-2 means "Yes, an image exists on L<Commons|http://commons.wikimedia.org>"
+FILE_SHARED (2) means "Yes, an image exists on L<Commons|http://commons.wikimedia.org>"
 
 =item *
 
-3 means "No image exists, but there is text on the page"
+FILE_PAGE_TEXT_ONLY (3) means "No image exists, but there is text on the page"
 
 =back
 
 If you pass in an arrayref of images, you'll get out an arrayref of
 results.
 
+    use MediaWiki::Bot::Constants;
     my $exists = $bot->test_image_exists('File:Albert Einstein Head.jpg');
-    if ($exists == 0) {
+    if ($exists == FILE_NONEXISTENT) {
         print "Doesn't exist\n";
     }
-    elsif ($exists == 1) {
+    elsif ($exists == FILE_LOCAL) {
         print "Exists locally\n";
     }
-    elsif ($exists == 2) {
+    elsif ($exists == FILE_SHARED) {
         print "Exists on Commons\n";
     }
-    elsif ($exists == 3) {
+    elsif ($exists == FILE_PAGE_TEXT_ONLY) {
         print "Page exists, but no image\n";
     }
 
@@ -3518,6 +3512,11 @@ ask for help.
 All functions will return undef in any handled error situation. Further error
 data is stored in C<< $bot->{error}->{code} >> and C<< $bot->{error}->{details} >>.
 
+Error codes are provided as constants in L<MediaWiki::Bot::Constants>, and can also
+be imported through this module:
+
+    use MediaWiki::Bot qw(:constants);
+
 =head1 AVAILABILITY
 
 The project homepage is L<https://metacpan.org/module/MediaWiki::Bot>.
@@ -3584,7 +3583,7 @@ patch and bug report contributors
 
 =head1 COPYRIGHT AND LICENSE
 
-This software is Copyright (c) 2013 by the MediaWiki::Bot team <perlwikibot@googlegroups.com>.
+This software is Copyright (c) 2014 by the MediaWiki::Bot team <perlwikibot@googlegroups.com>.
 
 This is free software, licensed under:
 

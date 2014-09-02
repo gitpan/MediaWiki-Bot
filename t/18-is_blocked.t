@@ -7,7 +7,7 @@ use MediaWiki::Bot;
 my $t = __FILE__;
 
 my $bot = MediaWiki::Bot->new({
-    agent   => "MediaWiki::Bot tests ($t)",
+    agent   => "MediaWiki::Bot tests (https://metacpan.org/MediaWiki::Bot; $t)",
     host    => 'test.wikipedia.org',
 });
 
@@ -20,7 +20,7 @@ my $bot = MediaWiki::Bot->new({
         'test_blocked is an alias of is_blocked; please use the new name. This alias might be removed in a future release',
         'test_blocked is deprecated'
     );
-    is($result, 0,      'current blocks');
+    ok(!$result,     'current blocks');
     is($result, $bc,    'BC method returned the same as the current method');
 }
 
@@ -34,6 +34,6 @@ my $bot = MediaWiki::Bot->new({
         'test_blocked is an alias of is_blocked; please use the new name. This alias might be removed in a future release',
         'test_blocked is deprecated'
     );
-    is($result, 1,      'current blocks');
+    ok($result,         'current blocks');
     is($result, $bc,    'BC method returned the same as the current method');
 }
