@@ -1,5 +1,6 @@
 use strict;
 use warnings;
+use Test::RequiresInternet 'en.wikipedia.org' => 80;
 use Test::More 0.96 tests => 2;
 
 use MediaWiki::Bot;
@@ -9,10 +10,6 @@ my $bot = MediaWiki::Bot->new({
     agent   => "MediaWiki::Bot tests (https://metacpan.org/MediaWiki::Bot; $t)",
     host    => 'en.wikipedia.org',
 });
-
-if(defined($ENV{'PWPMakeTestSetWikiHost'})) {
-    $bot->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
-}
 
 subtest 'basic' => sub {
     my $tests_run = 0;

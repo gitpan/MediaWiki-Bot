@@ -1,6 +1,8 @@
 use strict;
 use warnings;
 use utf8;
+use Test::Is qw(extended);
+use Test::RequiresInternet 'test.wikipedia.org' => 80;
 use Test::More 0.94 tests => 2;
 
 BEGIN {
@@ -16,23 +18,16 @@ BEGIN {
 use MediaWiki::Bot qw(:constants);
 my $t = __FILE__;
 
-my $username = $ENV{'PWPUsername'};
-my $password = $ENV{'PWPPassword'};
-my $login_data;
-if (defined($username) and defined($password)) {
-    $login_data = { username => $username, password => $password };
-}
-
 my $agent = "MediaWiki::Bot tests (https://metacpan.org/MediaWiki::Bot; $t)";
 my $bot   = MediaWiki::Bot->new({
     agent      => $agent,
-    login_data => $login_data,
     host       => 'test.wikipedia.org',
+    protocol   => 'https',
+    ( $ENV{PWPUsername} && $ENV{PWPPassword}
+        ? (login_data => { username => $ENV{PWPUsername}, password => $ENV{PWPPassword} })
+        : ()
+    ),
 });
-
-if(defined($ENV{'PWPMakeTestSetWikiHost'})) {
-   $bot->set_wiki($ENV{'PWPMakeTestSetWikiHost'}, $ENV{'PWPMakeTestSetWikiDir'});
-}
 
 my $base   = 'User:Mike.lifeguard/07-unicode.t';
 my $string = 'éółŽć';

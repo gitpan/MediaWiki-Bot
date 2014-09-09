@@ -2,7 +2,7 @@ package MediaWiki::Bot::Constants;
 use strict;
 use warnings;
 # ABSTRACT: constants for MediaWiki::Bot
-our $VERSION = '5.006000'; # VERSION
+our $VERSION = '5.006001'; # VERSION
 
 use MediaWiki::API; # How to grab these constants?
 use Constant::Generate {
@@ -78,7 +78,7 @@ MediaWiki::Bot::Constants - constants for MediaWiki::Bot
 
 =head1 VERSION
 
-version 5.006000
+version 5.006001
 
 =head1 SYNOPSIS
 

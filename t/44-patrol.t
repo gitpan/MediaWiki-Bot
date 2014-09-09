@@ -1,11 +1,12 @@
 use strict;
 use warnings;
+use Test::RequiresInternet 'test.wikipedia.org' => 80;
 use Test::More 0.88;
 
 use MediaWiki::Bot;
 my $t = __FILE__;
 
-my $host     = $ENV{'PWPMakeTestSetWikiHost'} || 'test.wikipedia.org';
+my $host     = 'test.wikipedia.org';
 my $username = $ENV{'PWPUsername'};
 my $password = $ENV{'PWPPassword'};
 plan skip_all => 'Login with patrol rights required'
@@ -19,6 +20,7 @@ my $bot = MediaWiki::Bot->new({
         do_sul => 0,
     },
     host => $host,
+    protocol => 'https',
 });
 
 my $tests_run = 0;

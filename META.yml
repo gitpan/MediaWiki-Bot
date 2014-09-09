@@ -17,7 +17,9 @@ build_requires:
   IPC::Open3: '0'
   List::MoreUtils: '0'
   Module::Build: '0.28'
+  Test::Is: '0'
   Test::More: '0.96'
+  Test::RequiresInternet: '0'
   Test::Warn: '0'
   perl: '5.008'
   utf8: '0'
@@ -53,4 +55,4 @@ requires:
 resources:
   homepage: https://metacpan.org/module/MediaWiki::Bot
   repository: git://github.com/doherty/MediaWiki-Bot.git
-version: '5.006000'
+version: '5.006001'

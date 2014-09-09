@@ -1,5 +1,7 @@
 use strict;
 use warnings;
+use Test::Is qw(extended);
+use Test::RequiresInternet 'test.wikipedia.org' => 80, 'test.wikipedia.org' => 443;
 use Test::More 0.96;
 use Test::Warn;
 
@@ -8,8 +10,8 @@ my $t = __FILE__;
 
 my $username = $ENV{PWPUsername};
 my $password = $ENV{PWPPassword};
-plan defined $username
-    ? (tests => 6)
+plan $username && $password
+    ? (tests => 7)
     : (skip_all => q{I can't log in without credentials});
 unlink ".mediawiki-bot-$username-cookies"
     if $username and -e ".mediawiki-bot-$username-cookies";
@@ -17,14 +19,25 @@ unlink ".mediawiki-bot-$username-cookies"
 my $useragent = "MediaWiki::Bot tests (https://metacpan.org/MediaWiki::Bot; $t)";
 my $host = 'test.wikipedia.org';
 
+subtest 'warn on HTTP' => sub {
+    plan tests => 2;
+
+    my $insecure = MediaWiki::Bot->new({ agent => $useragent, protocol => 'http', host => 'test.wikipedia.org' });
+
+    warning_like(
+        sub { is($insecure->login($username, $password), 1, 'Warning logging in w/ HTTP'); },
+        [
+            { carped => qr/^\QPlease pass a hashref/ },
+            { carped => qr/^\QLogging in over plain HTTP is a bad idea/ },
+        ],
+        'Got expected warnings'
+    );
+};
+
 subtest 'one wiki' => sub {
     plan tests => 3;
 
-    my $bot = MediaWiki::Bot->new({
-        agent   => $useragent,
-        host    => $host,
-        # debug   => 2,
-    });
+    my $bot = MediaWiki::Bot->new({ agent => $useragent, host => $host, protocol => 'https' });
 
     warning_is(
         sub {is($bot->login($username, $password), 1, 'Login OK'); },
@@ -37,11 +50,7 @@ subtest 'one wiki' => sub {
 subtest 'cookies' => sub {
     plan tests => 3;
 
-    my $cookiemonster = MediaWiki::Bot->new({
-        agent   => $useragent,
-        host    => $host,
-        # debug   => 2,
-    });
+    my $cookiemonster = MediaWiki::Bot->new({ agent => $useragent, host => $host, protocol => 'https' });
 
     is($cookiemonster->login({username => $username}), 1, 'Cookie log in');
     ok($cookiemonster->_is_loggedin(), q{Double-check we're logged in with only cookies});
@@ -51,11 +60,7 @@ subtest 'cookies' => sub {
 subtest 'SUL' => sub {
     plan tests => 9;
 
-    my $bot = MediaWiki::Bot->new({
-        agent   => $useragent,
-        host    => $host,
-        # debug => 2,
-    });
+    my $bot = MediaWiki::Bot->new({ agent => $useragent, host => $host, protocol => 'https' });
 
     is($bot->login({
             username => $username,
