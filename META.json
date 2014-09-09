@@ -88,14 +88,16 @@
    },
    "release_status" : "stable",
    "resources" : {
-      "bugtracker" : {},
+      "bugtracker" : {
+         "web" : "https://github.com/MediaWiki-Bot/MediaWiki-Bot/issues"
+      },
       "homepage" : "https://metacpan.org/module/MediaWiki::Bot",
       "repository" : {
          "type" : "git",
-         "url" : "git://github.com/doherty/MediaWiki-Bot.git",
-         "web" : "https://github.com/doherty/MediaWiki-Bot"
+         "url" : "git://github.com/MediaWiki-Bot/MediaWiki-Bot.git",
+         "web" : "https://github.com/MediaWiki-Bot/MediaWiki-Bot"
       }
    },
-   "version" : "5.006001"
+   "version" : "5.006002"
 }
 

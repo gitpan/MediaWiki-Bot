@@ -2,7 +2,7 @@ package MediaWiki::Bot;
 use strict;
 use warnings;
 # ABSTRACT: a high-level bot framework for interacting with MediaWiki wikis
-our $VERSION = '5.006001'; # VERSION
+our $VERSION = '5.006002'; # VERSION
 
 use HTML::Entities 3.28;
 use Carp;
@@ -2233,7 +2233,7 @@ MediaWiki::Bot - a high-level bot framework for interacting with MediaWiki wikis
 
 =head1 VERSION
 
-version 5.006001
+version 5.006002
 
 =head1 SYNOPSIS
 
@@ -3676,13 +3676,13 @@ site near you, or see L<https://metacpan.org/module/MediaWiki::Bot/>.
 
 =head1 SOURCE
 
-The development version is on github at L<http://github.com/doherty/MediaWiki-Bot>
-and may be cloned from L<git://github.com/doherty/MediaWiki-Bot.git>
+The development version is on github at L<http://github.com/MediaWiki-Bot/MediaWiki-Bot>
+and may be cloned from L<git://github.com/MediaWiki-Bot/MediaWiki-Bot.git>
 
 =head1 BUGS AND LIMITATIONS
 
 You can make new bug reports, and view existing ones, through the
-web interface at L<http://rt.cpan.org>.
+web interface at L<https://github.com/MediaWiki-Bot/MediaWiki-Bot/issues>.
 
 =head1 AUTHORS
 
